@@ -11,6 +11,8 @@ async function build() {
       minify: CONFIG.MINIFY,
       sourcemap: CONFIG.SOURCEMAP,
       experimentalCss: CONFIG.EXPERIMENTAL_CSS,
+      target: "browser",
+      format: "iife",
     });
     console.log("✅ Build complete!");
   } catch (error) {

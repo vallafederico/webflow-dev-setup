@@ -15,5 +15,10 @@
     "api": "bun --watch run bin/api.ts",
     "all": "bun run bin/all.ts"
   },
-  "type": "module"
+  "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bun"
+    ]
+  }
 }
