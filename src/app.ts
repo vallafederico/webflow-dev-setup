@@ -1,5 +1,6 @@
 import { Scroll } from "@lib/scroll";
 import { Pages } from "@lib/pages";
+import { runInitial } from "@lib/pages";
 
 // history.scrollRestoration = "manual";
 
@@ -8,7 +9,9 @@ class _App {
   pages = Pages;
 
   constructor() {
-    console.log("IIIV");
+    console.log("App", performance.now().toFixed(2));
+
+    runInitial();
   }
 }
 

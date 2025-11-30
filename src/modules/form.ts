@@ -5,6 +5,8 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   console.log("form", element);
 
   onMount(() => {
-    resetWebflow();
+    setTimeout(() => {
+      resetWebflow();
+    }, 500);
   });
 }

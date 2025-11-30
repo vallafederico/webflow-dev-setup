@@ -11,6 +11,7 @@ import {
   runPageOut,
   runPageIn,
 } from "@/modules/_";
+import { resetWebflow } from "@/webflow/reset-webflow";
 
 const PAGES_CONFIG = {
   links: "a:not([target]):not([href^=\\#]):not([data-taxi-ignore])",
@@ -27,6 +28,12 @@ export interface TransitionParams {
   destination?: string;
 }
 
+export function runInitial() {
+  createCycles();
+  runPageIn();
+  runMount();
+}
+
 export class _Pages extends Core {
   constructor() {
     super({
@@ -35,10 +42,6 @@ export class _Pages extends Core {
         default: Transition,
       },
     });
-
-    createCycles();
-    runPageIn();
-    runMount();
   }
 
   // async init() {}
@@ -66,6 +69,7 @@ export class _Pages extends Core {
     ]);
 
     runMount();
+    // resetWebflow();
   }
 }
 
