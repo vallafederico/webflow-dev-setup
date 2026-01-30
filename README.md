@@ -50,6 +50,7 @@ bun dev
 - [Scroll System](./docs/scroll-system.md)
 - [Observer & Track System](./docs/observer-track-system.md)
 - [Subscription System](./docs/subscription-system.md)
+- [Tick – Performance Timing & Metrics](./docs/tick.md)
 - [Webflow Integration](./docs/webflow-integration.md)
 
 ### Development Guides

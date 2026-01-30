@@ -12,6 +12,7 @@ import {
   runPageIn,
 } from "@/modules/_";
 import { resetWebflow } from "@/webflow/reset-webflow";
+import { tick } from "@/utils/tick";
 
 const PAGES_CONFIG = {
   links: "a:not([target]):not([href^=\\#]):not([data-taxi-ignore])",
@@ -32,6 +33,7 @@ export function runInitial() {
   createCycles();
   runPageIn();
   runMount();
+  tick.restoreFpsDisplay();
 }
 
 export class _Pages extends Core {
@@ -47,6 +49,8 @@ export class _Pages extends Core {
   // async init() {}
 
   async transitionOut({ from, trigger }: TransitionParams) {
+    tick.cleanupFpsDisplay();
+
     await Promise.allSettled([
       await runPageOut(),
       // ...
@@ -60,6 +64,7 @@ export class _Pages extends Core {
     createCycles();
     Scroll.resize();
     Resize.update();
+    tick.restoreFpsDisplay();
 
     // State.PAGE = to;
 
