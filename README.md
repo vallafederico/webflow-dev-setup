@@ -53,6 +53,10 @@ bun dev
 - [Tick – Performance Timing & Metrics](./docs/tick.md)
 - [Webflow Integration](./docs/webflow-integration.md)
 
+### Integrations
+
+- [Webflow MCP in Cursor](./docs/webflow-mcp-cursor.md) – Use the Webflow MCP server in Cursor to manage sites, CMS, and Designer via chat
+
 ### Development Guides
 
 - [Multiple Entry Points](./docs/multiple-entry-points.md)
