@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: TypeScript patterns for modules (signature, imports, types). Use when writing or refactoring module code in src/modules/ or lib.
+globs:
 alwaysApply: false
 ---
 # TypeScript Patterns for Module System

@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: DOM attribute conventions (data-module, data-* options, kebab-case). Use when adding or reading attributes for modules or component config.
+globs:
 alwaysApply: false
 ---
 # DOM Attribute Conventions

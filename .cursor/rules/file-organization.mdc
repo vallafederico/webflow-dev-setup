@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: File and folder structure (src/modules/, lib, utils). Use when adding files, organizing imports, or navigating the codebase.
+globs:
 alwaysApply: false
 ---
 # File Organization Rules

@@ -1,3 +1,8 @@
+---
+description: Module lifecycle (onMount, onDestroy, onPageIn, onPageOut). Use when initializing, cleaning up, or animating page transitions.
+globs:
+alwaysApply: false
+---
 # Lifecycle Management Rules
 
 ## Mounting Phase

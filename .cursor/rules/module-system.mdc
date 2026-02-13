@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: Custom module system (data-module, lifecycle hooks, subscriptions). Use when creating or editing modules in src/modules/ or wiring DOM to JS.
+globs:
 alwaysApply: false
 ---
 # Custom Module System Rules

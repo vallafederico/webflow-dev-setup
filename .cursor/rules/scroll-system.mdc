@@ -1,3 +1,8 @@
+---
+description: Scroll service from @lib/scroll (scroll, progress, velocity). Use when implementing scroll-driven animations or scroll subscriptions.
+globs:
+alwaysApply: false
+---
 # Scroll System Rules
 
 ## Basic Scroll Usage

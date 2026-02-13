@@ -175,3 +175,4 @@ MCP works better with smaller projects. For heavy MCP use, consider a dedicated 
 - [Webflow MCP – How it works](https://developers.webflow.com/mcp/reference/how-it-works)
 - [Webflow MCP – Prompt examples](https://developers.webflow.com/mcp/examples)
 - [Cursor MCP configuration](https://docs.cursor.com/en/context/mcp#configuration-locations)
+- [Webflow MCP in Claude Code](webflow-mcp-claude-code.md) (per-project MCP + skills for Claude Code)

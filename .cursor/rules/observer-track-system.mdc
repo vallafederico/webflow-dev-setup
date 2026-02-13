@@ -1,3 +1,8 @@
+---
+description: Observe (viewport) and onTrack (scroll bounds) for viewport detection and scroll progress. Use when implementing scroll or view-based behavior.
+globs:
+alwaysApply: false
+---
 # Observer & Track System Rules
 
 ## Basic Observer Usage

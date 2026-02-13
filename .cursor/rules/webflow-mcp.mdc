@@ -1,7 +1,7 @@
 ---
-description: How to effectively use the Webflow MCP in Cursor
-globs: 
-alwaysApply: true
+description: How to effectively use the Webflow MCP in Cursor. Use when calling Webflow MCP tools, CMS, Designer, sites, or data-modules.
+globs:
+alwaysApply: false
 ---
 
 # Webflow MCP usage

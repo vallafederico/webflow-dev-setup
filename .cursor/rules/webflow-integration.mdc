@@ -1,3 +1,8 @@
+---
+description: Webflow Designer detection (handleEditor) and editor vs published behavior. Use when disabling features in Designer or handling editor mode.
+globs:
+alwaysApply: false
+---
 # Webflow Integration Rules
 
 ## Editor Detection

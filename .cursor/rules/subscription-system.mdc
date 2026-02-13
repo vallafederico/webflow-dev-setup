@@ -1,3 +1,8 @@
+---
+description: Raf and Resize subscription services from @lib/subs. Use when using requestAnimationFrame or resize handlers in modules.
+globs:
+alwaysApply: false
+---
 # Subscription System Rules
 
 ## Raf Service Usage

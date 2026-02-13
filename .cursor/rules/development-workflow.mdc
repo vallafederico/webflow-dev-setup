@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: Steps for creating and testing modules, from new file to data-module wiring. Use when starting a new module or onboarding.
+globs:
 alwaysApply: false
 ---
 # Development Workflow Rules
