@@ -78,4 +78,4 @@ export class _Pages extends Core {
   }
 }
 
-export const Pages = new _Pages();
+// export const Pages = new _Pages();
