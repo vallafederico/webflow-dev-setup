@@ -1,7 +1,7 @@
 {
   "name": "webflow-dev-setup",
   "module": "index.ts",
-  "license": "CC-BY-4.0",
+  "license": "CC-BY-NC-4.0",
   "devDependencies": {
     "bun": "^1.1.45",
     "bun-types": "latest",
