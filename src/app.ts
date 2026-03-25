@@ -2,6 +2,7 @@ import { Scroll } from "@lib/scroll";
 import { runInitial } from "@lib/pages";
 import { tick } from "@/utils/tick";
 import { publicAssetUrl, PUBLIC_ASSET_ORIGIN } from "@/utils/public-asset";
+// import { Pages } from "@lib/pages";
 
 export { PUBLIC_ASSET_ORIGIN, publicAssetUrl };
 
@@ -14,7 +15,6 @@ function loadPublicAssets() {
     console.log("url", url);
   }
 }
-// import { Pages } from "@lib/pages";
 
 // history.scrollRestoration = "manual";
 
