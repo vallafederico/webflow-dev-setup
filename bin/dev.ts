@@ -3,6 +3,8 @@ import { ServerWebSocket } from "bun";
 import { generateResponse } from "./generateResponse";
 import { liveReloadCode } from "./live-reload";
 import { CONFIG } from "./config";
+import { copyPublicToDist } from "./copy-public";
+import { getBunDefine } from "./public-asset-origin";
 import type { BuildConfig } from "bun";
 import { existsSync } from "fs";
 import { resolve } from "path";
@@ -46,6 +48,7 @@ async function rebuildFiles() {
     // Build JS files
     const result = await Bun.build({
       ...(CONFIG.bun as BuildConfig),
+      define: getBunDefine(),
     });
 
     // Build CSS files separately
@@ -77,6 +80,8 @@ async function rebuildFiles() {
         );
       }
     }
+
+    await copyPublicToDist();
 
     currentBuildResult = { outputs: [...result.outputs, ...cssResult.outputs] };
     clients.forEach((client) => client.send("reload"));

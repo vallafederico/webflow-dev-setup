@@ -1,8 +1,9 @@
 import { CONFIG } from "./config";
 import type { BuildConfig } from "bun";
 import { generateBuildManifest, saveManifestFiles } from "./manifest";
+import { copyPublicToDist } from "./copy-public";
+import { getBunDefine } from "./public-asset-origin";
 import { cp } from "node:fs/promises";
-import { existsSync } from "node:fs";
 
 async function build() {
   const startTime = Date.now();
@@ -11,6 +12,7 @@ async function build() {
     // Build JS files
     const result = await Bun.build({
       ...(CONFIG.bun as BuildConfig),
+      define: getBunDefine(),
     });
 
     console.log("result -> []", result);
@@ -25,12 +27,7 @@ async function build() {
       minify: true,
     } as BuildConfig);
 
-    // Copy public directory if it exists
-    if (existsSync("public")) {
-      console.log("\n📁 Copying public directory...");
-      await cp("public", "dist/public", { recursive: true });
-      console.log("✅ Public directory copied successfully!");
-    }
+    await copyPublicToDist();
 
     const buildDuration = Date.now() - startTime;
     console.log("✅ Build complete!");

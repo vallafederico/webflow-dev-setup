@@ -1,6 +1,19 @@
 import { Scroll } from "@lib/scroll";
 import { runInitial } from "@lib/pages";
 import { tick } from "@/utils/tick";
+import { publicAssetUrl, PUBLIC_ASSET_ORIGIN } from "@/utils/public-asset";
+
+export { PUBLIC_ASSET_ORIGIN, publicAssetUrl };
+
+/** Paths under `public/` to warm-load at startup (absolute URL via {@link publicAssetUrl}). */
+const PUBLIC_ASSET_PATHS = ["bd.002_Bake6_CyclesBake_COMBINED.png"] as const;
+
+function loadPublicAssets() {
+  for (const path of PUBLIC_ASSET_PATHS) {
+    const url = publicAssetUrl(path);
+    console.log("url", url);
+  }
+}
 // import { Pages } from "@lib/pages";
 
 // history.scrollRestoration = "manual";
@@ -11,6 +24,8 @@ class _App {
 
   constructor() {
     console.log("App", performance.now().toFixed(2));
+
+    loadPublicAssets();
 
     runInitial();
 

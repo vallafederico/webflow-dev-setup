@@ -102,6 +102,9 @@ export function generateBuildManifest(
   const { sourceMaps, otherFiles } = separateSourceMaps(allFiles);
   const { txtFiles, otherFiles: remainingFiles } = separateTxtFiles(otherFiles);
   const publicFiles = getPublicFiles();
+  const publicPaths = new Set(publicFiles.map((f) => f.path));
+  const distFiles = remainingFiles.filter((f) => !publicPaths.has(f.path));
+  const txtFilesDeduped = txtFiles.filter((f) => !publicPaths.has(f.path));
 
   return {
     timestamp: new Date().toISOString(),
@@ -123,8 +126,8 @@ export function generateBuildManifest(
     public: {
       files: publicFiles,
     },
-    distFiles: remainingFiles,
-    txtFiles: txtFiles,
+    distFiles,
+    txtFiles: txtFilesDeduped,
     sourceMaps: sourceMaps,
   };
 }
@@ -305,7 +308,7 @@ export function saveManifestFiles(manifest: BuildManifest) {
               .map(
                 (file) => `
                 <div class="file-item">
-                    <a href="/public/${
+                    <a href="/${
                       file.path
                     }" target="_blank" class="file-path">${file.path}</a>
                     <span class="file-info">
