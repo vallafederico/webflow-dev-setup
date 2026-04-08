@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] - 2025-04-08
+
+### Changed
+
+- **Unified Loader Script**: Replaced per-file `onerror` handlers with a single self-contained `<script>` block
+  - Production (non `.webflow.io`): loads JS + CSS directly from Vercel — fastest path
+  - Dev (`.webflow.io`): preloads deployed assets, tries local dev server first, falls back on error
+  - Dev server index page now shows a click-to-copy loader script with pre-filled URLs
+
+- **Page-Specific JS Routing**: The loader auto-routes by URL path to page-specific scripts
+  - Files in `src/pages/` are built as separate entrypoints
+  - Loader matches first path segment (e.g. `/home` → `home.js`)
+  - Falls back to `app.js` when no page matches
+  - Dev server index shows role badges: `(fallback)` for app.js, `(/slug)` for page scripts
+
+- **CSS Fully Managed by Loader**: `app.css` is injected by the loader script
+  - No more separate `<link>` tags in Webflow's custom code
+  - No more custom CSS written inside Webflow Designer
+  - Same local-first-with-fallback strategy as JS
+  - Single CSS entrypoint (`app.css`) — removed `out.css` as a default
+
+### Removed
+
+- Per-file inline `onerror` fallback attributes
+- Dual-script CSS approach (separate Designer vs Production stylesheets)
+- `out.css` as a default CSS entrypoint (no longer needed since CSS isn't written in Webflow)
+- `.error-handler-box` UI in dev server index (replaced by `.loader-box`)
+
+---
+
 ## [Unreleased] - 2024-12-19
 
 ### Added

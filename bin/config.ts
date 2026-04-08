@@ -4,7 +4,7 @@ import { getPageFiles } from "./pages";
 import { existsSync } from "fs";
 import { resolve } from "path";
 
-const cssEntrypoints = ["src/styles/app.css", "src/styles/out.css"];
+const cssEntrypoints = ["src/styles/app.css"];
 
 const appFile = existsSync(resolve("src/app.ts"))
   ? "src/app.ts"

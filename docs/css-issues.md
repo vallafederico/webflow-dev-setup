@@ -1,67 +1,43 @@
-# CSS Integration Guide
+# CSS Integration
 
-## Understanding Dual Script CSS
+## How CSS is Loaded
 
-Due to Webflow's limitations with JavaScript execution in certain contexts, we need a dual-script approach for CSS. While not ideal, this solution provides the best balance of functionality and simplicity.
+All CSS is managed by the **unified loader script** — there is no need to add separate `<link>` tags or custom CSS inside Webflow's Designer.
 
-## Designer Setup
+The loader injects `app.css` using the same local-first-with-fallback strategy as JavaScript:
 
-Add these lines to your Webflow project:
+- **Production**: CSS loads directly from Vercel.
+- **Dev** (`.webflow.io`): tries local dev server first, falls back to Vercel on error.
 
-```html
-<link rel="stylesheet" href="{YOUR VERCEL PROJECT URL}/styles/out.css" />
-<link rel="stylesheet" href="http://localhost:6545/styles/app.css" />
-```
+## CSS Entrypoint
 
-> **Note**: Webflow's JavaScript restrictions prevent us from implementing dynamic script switching.
+The single CSS entrypoint is `src/styles/app.css`. It imports all sub-files and is built by Bun's CSS bundler to `dist/app.css`.
 
-## How It Works
+Additional CSS entrypoints can be added in `bin/config.ts` if needed.
 
-### File Priority
+## Writing CSS
 
-1. The Vercel-deployed CSS loads first (production version)
-2. The local development CSS loads second (development version)
-
-### Example Scenarios
-
-#### Scenario 1: Property Override
+Write all your styles in the `src/styles/` directory. Use `@import` in `app.css` to organize:
 
 ```css
-/* Production (Vercel) */
-.body {
-  background-color: red;
-}
-
-/* Development (Local) */
-.body {
-  background-color: black;
-}
-
-/* Result: background will be black */
+/* src/styles/app.css */
+@import "./media.css";
+@import "./editor.css";
+@import "./mod/fluid-type.css";
+@import "./mod/utils.css";
 ```
 
-#### Scenario 2: Commented Properties
+Since **no custom CSS is written inside Webflow**, there are no specificity conflicts between Webflow's styles and your custom styles. Your CSS always loads after Webflow's built-in styles, so overrides work naturally.
 
-```css
-/* Production (Vercel) */
-.body {
-  background-color: red;
-}
+## Webflow Editor Styles
 
-/* Development (Local) */
-.body {
-  /* background-color: black; */
-}
-
-/* Result: background will be red */
-```
+Use `src/styles/editor.css` for styles that should only apply or adjust behavior inside the Webflow Designer. The editor detection system (`handleEditor`) handles JS-side adjustments, but CSS-only tweaks can go here.
 
 ## Troubleshooting
 
-If you encounter styling conflicts:
+If styles aren't updating during development:
 
-1. Comment out all related styles
-2. Deploy to clear production styles
-3. Reimplement styles in your local file
-
-This approach ensures clean style implementation without conflicts.
+1. Make sure `bun dev` is running — the loader tries local first
+2. Hard-refresh the Webflow preview (Cmd+Shift+R)
+3. Check the browser console for CSS load errors
+4. If the local server is down, the loader automatically falls back to the last deployed version

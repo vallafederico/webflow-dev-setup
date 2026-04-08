@@ -68,45 +68,72 @@ bun dev
 
 ## Project Setup
 
-### JavaScript Integration
+### Webflow Integration
 
-Add this script to your Webflow project's head:
+Paste the **unified loader script** into your Webflow site's **Custom Code → Head Code**. The dev server at `http://localhost:6545` generates the full script for you — just click to copy.
+
+The loader handles everything (JS + CSS) in a single `<script>` block:
 
 ```html
 <script>
-  function onErrorLoader() {
-    const script = document.createElement("script");
-    script.src = "{YOUR VERCEL PROJECT URL/app.js}";
-    script.defer = "true";
-    document.head.appendChild(script);
+(function(d,h,host){
+  var isWF = host.endsWith(".webflow.io");
+  var DEP = "{YOUR VERCEL URL}";
+  var LOC = "https://localhost:6545";
+
+  function loadScript(src,cors){
+    var s=d.createElement("script");
+    s.src=src; s.defer=1;
+    if(cors) s.crossOrigin="anonymous";
+    h.appendChild(s); return s;
   }
+  function loadCSS(href){
+    var l=d.createElement("link");
+    l.rel="stylesheet"; l.href=href;
+    h.appendChild(l); return l;
+  }
+
+  var css = ["app.css"];
+  var js = "app.js";
+
+  if(!isWF){
+    css.forEach(function(f){ loadCSS(DEP+"/"+f); });
+    if(js) loadScript(DEP+"/"+js, true);
+    return;
+  }
+
+  if(js){
+    var p=d.createElement("link");
+    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js; p.crossOrigin="anonymous";
+    h.appendChild(p);
+  }
+  css.forEach(function(f){
+    var p=d.createElement("link");
+    p.rel="preload"; p.as="style"; p.href=DEP+"/"+f;
+    h.appendChild(p);
+  });
+
+  css.forEach(function(f){
+    var l=loadCSS(LOC+"/"+f);
+    l.onerror=function(){ loadCSS(DEP+"/"+f); };
+  });
+  if(js){
+    var s=loadScript(LOC+"/"+js);
+    s.onerror=function(){ loadScript(DEP+"/"+js, true); };
+  }
+
+})(document,document.head,location.hostname);
 </script>
-
-<script
-  defer
-  src="http://localhost:6545/app.js"
-  onerror="onErrorLoader()"
-></script>
 ```
 
-### CSS Integration
+**How it works:**
 
-Add these stylesheets to your Webflow project:
+- **Production** (non `.webflow.io`): loads JS and CSS directly from your Vercel deployment — fastest path, no fallback logic.
+- **Dev** (on `.webflow.io`): preloads deployed assets, tries local dev server first, falls back to deployed on error.
+- **Page routing**: if you have page-specific scripts in `src/pages/`, the loader auto-generates a pages map and picks the right JS file based on the URL path (e.g. `/home` loads `home.js`). Falls back to `app.js` if no page matches. See [Multiple Entry Points](./docs/multiple-entry-points.md).
+- **CSS is fully managed by the loader** — no need for separate stylesheet tags or custom CSS inside Webflow.
 
-```html
-<!-- Production CSS -->
-<link
-  rel="stylesheet"
-  href="http://localhost:6545/styles/out.css"
-  onerror="this.onerror=null;this.href='{YOUR VERCEL PROJECT URL}/styles/out.css'"
-/>
-
-<!-- Designer CSS -->
-<link rel="stylesheet" href="{YOUR VERCEL PROJECT URL}/styles/out.css" />
-<link rel="stylesheet" href="http://localhost:6545/styles/app.css" />
-```
-
-> **Note**: See [CSS setup notes](./docs/css-issues.md) for handling potential styling conflicts.
+> **Note**: Run `bun dev` and visit `http://localhost:6545` to get the generated loader with your actual URLs pre-filled.
 
 ## Component System
 
@@ -235,7 +262,6 @@ src/
   │   └── detect-editor.ts # Editor detection
   └── styles/
       ├── app.css      # Main CSS entry with imports
-      ├── out.css      # Compiled CSS output
       ├── media.css    # Media queries
       ├── editor.css   # Editor-specific styles
       └── mod/         # CSS modules
