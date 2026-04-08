@@ -5,56 +5,154 @@ interface BuildOutput {
   path: string;
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function generateLoaderScript(
+  appJs: string | null,
+  pageJs: string[],
+  cssFiles: string[],
+  deployUrl: string,
+  localUrl: string
+): string {
+  const cssArray = cssFiles.map((f) => `"${f}"`).join(", ");
+  const hasPages = pageJs.length > 0;
+
+  const pagesMap = hasPages
+    ? `{${pageJs
+        .map((f) => {
+          const slug = f.replace(/^pages\//, "").replace(/\.js$/, "");
+          return `"${slug}":"${f}"`;
+        })
+        .join(",")}}`
+    : null;
+
+  const fallback = appJs ? `"${appJs}"` : "null";
+
+  return `<script>
+(function(d,h,host){
+  var isWF = host.endsWith(".webflow.io");
+  var DEP = "${deployUrl}";
+  var LOC = "${localUrl}";
+
+  function loadScript(src,cors){
+    var s=d.createElement("script");
+    s.src=src; s.defer=1;
+    if(cors) s.crossOrigin="anonymous";
+    h.appendChild(s);
+    return s;
+  }
+
+  function loadCSS(href){
+    var l=d.createElement("link");
+    l.rel="stylesheet"; l.href=href;
+    h.appendChild(l);
+    return l;
+  }
+
+  var css = [${cssArray}];
+${
+  hasPages
+    ? `
+  var pages = ${pagesMap};
+  var slug = location.pathname.replace(/^\\/|\\/$/g,"").split("/")[0];
+  var js = pages[slug] || ${fallback};`
+    : `
+  var js = ${fallback};`
+}
+
+  if(!isWF){
+    css.forEach(function(f){ loadCSS(DEP+"/"+f); });
+    if(js) loadScript(DEP+"/"+js, true);
+    return;
+  }
+
+  if(js){
+    var p=d.createElement("link");
+    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js; p.crossOrigin="anonymous";
+    h.appendChild(p);
+  }
+  css.forEach(function(f){
+    var p=d.createElement("link");
+    p.rel="preload"; p.as="style"; p.href=DEP+"/"+f;
+    h.appendChild(p);
+  });
+
+  css.forEach(function(f){
+    var l=loadCSS(LOC+"/"+f);
+    l.onerror=function(){ loadCSS(DEP+"/"+f); };
+  });
+  if(js){
+    var s=loadScript(LOC+"/"+js);
+    s.onerror=function(){ loadScript(DEP+"/"+js, true); };
+  }
+
+})(document,document.head,location.hostname);
+<\/script>`;
+}
+
 function generateIndexHtml(outputs: BuildOutput[]) {
-  // Use the new URL validation
   const vercelUrl = getValidatedUrlSafe("VERCEL_URL") || "{NO VERCEL URL}";
+  const hasVercel = vercelUrl !== "{NO VERCEL URL}";
 
   const protocol = process.env.USE_SSL === "true" ? "https" : "http";
   const localUrl = `${protocol}://localhost:${CONFIG.SERVE_PORT}`;
 
-  const jsLinks = outputs
+  const allJs = outputs
     .filter(
-      (output) =>
-        output.path.endsWith(".js") && !output.path.endsWith(".js.map")
+      (o) => o.path.endsWith(".js") && !o.path.endsWith(".js.map")
     )
-    .map((output) => {
-      const relativePath = output.path.split("/dist/")[1];
+    .map((o) => o.path.split("/dist/")[1]);
+
+  const appJs = allJs.find((f) => f === "app.js") ?? null;
+  const pageJs = allJs.filter((f) => f !== "app.js");
+
+  const cssFiles = outputs
+    .filter((o) => o.path.endsWith(".css"))
+    .map((o) => o.path.split("/dist/")[1]);
+
+  const loaderScript = hasVercel
+    ? generateLoaderScript(appJs, pageJs, cssFiles, vercelUrl, localUrl)
+    : null;
+
+  const jsLinks = allJs
+    .map((relativePath) => {
+      const isPage = pageJs.includes(relativePath);
+      const slug = relativePath.replace(/\.js$/, "");
+      const badge = isPage
+        ? ` <span style="font-size:0.75em;opacity:0.6">(/&ZeroWidthSpace;${slug})</span>`
+        : appJs === relativePath && pageJs.length > 0
+        ? ` <span style="font-size:0.75em;opacity:0.6">(fallback)</span>`
+        : "";
       return `<li>
-        <a href="/${relativePath}" target="_blank" class="main-link">${relativePath}</a>
-        <code class="script-tag">&lt;script defer src="${localUrl}/${relativePath}"&gt;&lt;/script&gt;</code>
+        <a href="/${relativePath}" target="_blank" class="main-link">${relativePath}</a>${badge}
+        <code class="tag">&lt;script defer src="${localUrl}/${relativePath}"&gt;&lt;/script&gt;</code>
         ${
-          vercelUrl !== "{NO VERCEL URL}"
-            ? `
-        <code class="script-tag">&lt;script defer src="<a href="${vercelUrl}/${relativePath}" target="_blank">${vercelUrl}/${relativePath}</a>"&gt;&lt;/script&gt;</code>
-        <div class="error-handler-box">
-          <code class="script-tag">&lt;script defer src="${localUrl}/${relativePath}" onerror="(function(){const script=document.createElement('script');script.src='${vercelUrl}/${relativePath}';script.defer='true';document.head.appendChild(script);})()"&gt;&lt;/script&gt;</code>
-        </div>
-        `
+          hasVercel
+            ? `<code class="tag">&lt;script defer src="<a href="${vercelUrl}/${relativePath}" target="_blank">${vercelUrl}/${relativePath}</a>"&gt;&lt;/script&gt;</code>`
             : ""
         }
       </li>`;
     })
     .join("\n");
 
-  const cssLinks = outputs
-    .filter((output) => output.path.endsWith(".css"))
-    .map((output) => {
-      const relativePath = output.path.split("/dist/")[1];
-      return `<li>
+  const cssLinks = cssFiles
+    .map(
+      (relativePath) => `<li>
         <a href="/${relativePath}" target="_blank" class="main-link">${relativePath}</a>
-        <code class="script-tag">&lt;link rel="stylesheet" href="${localUrl}/${relativePath}"&gt;</code>
+        <code class="tag">&lt;link rel="stylesheet" href="${localUrl}/${relativePath}"&gt;</code>
         ${
-          vercelUrl !== "{NO VERCEL URL}"
-            ? `
-        <code class="script-tag">&lt;link rel="stylesheet" href="<a href="${vercelUrl}/${relativePath}" target="_blank">${vercelUrl}/${relativePath}</a>"&gt;</code>
-        <div class="error-handler-box">
-          <code class="script-tag">&lt;link rel="stylesheet" href="${localUrl}/${relativePath}" onerror="(function(){const link=document.createElement('link');link.rel='stylesheet';link.href='${vercelUrl}/${relativePath}';document.head.appendChild(link);})()"&gt;</code>
-        </div>
-        `
+          hasVercel
+            ? `<code class="tag">&lt;link rel="stylesheet" href="<a href="${vercelUrl}/${relativePath}" target="_blank">${vercelUrl}/${relativePath}</a>"&gt;</code>`
             : ""
         }
-      </li>`;
-    })
+      </li>`
+    )
     .join("\n");
 
   const mapLinks = outputs
@@ -114,26 +212,42 @@ function generateIndexHtml(outputs: BuildOutput[]) {
           .map-file { font-size: 0.8em; opacity: 0.5; }
           h2, h3 { margin-top: 2rem; }
           h2:first-child { margin-top: 0; }
-          .script-tag {
+          .tag {
             display: block;
             margin-top: 0.25rem;
             font-size: 0.9em;
             color: var(--code-color);
             font-family: monospace;
           }
-          .script-tag a {
+          .tag a {
             color: var(--link-color);
           }
-          .error-handler-box {
+          .loader-box {
             background-color: var(--code-bg);
             padding: 1rem;
             border-radius: 4px;
             margin-top: 0.5rem;
             cursor: pointer;
+            position: relative;
             transition: background-color 0.3s ease;
           }
-          .error-handler-box.copied {
+          .loader-box.copied {
             background-color: var(--hover-bg);
+          }
+          .loader-box pre {
+            margin: 0;
+            font-size: 0.85em;
+            white-space: pre;
+            overflow-x: auto;
+            color: var(--code-color);
+          }
+          .loader-box .copy-hint {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.75rem;
+            font-size: 0.75em;
+            color: var(--code-color);
+            opacity: 0.6;
           }
           .vercel-notice {
             position: fixed;
@@ -168,35 +282,41 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         </style>
         <script>
           document.addEventListener('DOMContentLoaded', () => {
-            document.querySelectorAll('.error-handler-box').forEach(box => {
+            document.querySelectorAll('.loader-box').forEach(box => {
               box.addEventListener('click', async () => {
-                const code = box.querySelector('code').textContent;
+                const code = box.querySelector('pre').textContent;
                 try {
                   await navigator.clipboard.writeText(code);
                   box.classList.add('copied');
-                  setTimeout(() => {
-                    box.classList.remove('copied');
-                  }, 1000);
+                  setTimeout(() => box.classList.remove('copied'), 1000);
                 } catch (err) {
                   console.error('Failed to copy text: ', err);
                 }
               });
             });
 
-            // Add close functionality for the Vercel notice
             const closeButton = document.querySelector('.vercel-notice .close');
             if (closeButton) {
               closeButton.addEventListener('click', () => {
                 const notice = document.querySelector('.vercel-notice');
-                if (notice) {
-                  notice.style.display = 'none';
-                }
+                if (notice) notice.style.display = 'none';
               });
             }
           });
         </script>
       </head>
       <body>
+        ${
+          loaderScript
+            ? `<h2>Loader Script</h2>
+        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code>, falls back to deployed.</p>
+        <div class="loader-box">
+          <span class="copy-hint">click to copy</span>
+          <pre>${escapeHtml(loaderScript)}</pre>
+        </div>`
+            : ""
+        }
+
         <h2>JavaScript Files:</h2>
         <ul>${jsLinks}</ul>
 
@@ -206,7 +326,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         ${mapLinks ? `<h3>Source Maps:</h3><ul>${mapLinks}</ul>` : ""}
 
         ${
-          vercelUrl === "{NO VERCEL URL}"
+          !hasVercel
             ? '<div class="vercel-notice"><span class="icon">&#9432;</span><span>Add VERCEL_URL to your .env file for full CI/CD functionality</span><span class="close">&#10005;</span></div>'
             : ""
         }
