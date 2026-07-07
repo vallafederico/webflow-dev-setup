@@ -20,11 +20,6 @@
     "setup-ssl": "chmod +x scripts/setup-ssl.sh && ./scripts/setup-ssl.sh"
   },
   "type": "module",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "bun"
-    ]
-  },
   "dependencies": {
     "@unseenco/taxi": "^1.9.0",
     "gsap": "^3.13.0",
