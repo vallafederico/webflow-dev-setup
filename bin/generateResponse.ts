@@ -34,16 +34,23 @@ function generateLoaderScript(
 
   const fallback = appJs ? `"${appJs}"` : "null";
 
+  // Classic (non-module) scripts do not need crossOrigin to run. Setting it
+  // forces a CORS fetch; Safari Advanced Tracking / Private Browsing can then
+  // block the third-party Vercel URL and offer "Reduce Privacy Protections".
+  // Localhost is only reachable from the machine running `bun dev` — phones
+  // viewing webflow.io must skip it or they race a failed request every load.
   return `<script>
 (function(d,h,host){
   var isWF = host.endsWith(".webflow.io");
   var DEP = "${deployUrl}";
   var LOC = "${localUrl}";
+  // Phones/tablets cannot reach the developer's localhost; skip it there.
+  var tryLocal = isWF && !matchMedia("(pointer: coarse)").matches && location.search.indexOf("local=0") === -1;
 
-  function loadScript(src,cors){
+  function loadScript(src){
     var s=d.createElement("script");
-    s.src=src; s.defer=1;
-    if(cors) s.crossOrigin="anonymous";
+    s.src=src;
+    s.defer=true;
     h.appendChild(s);
     return s;
   }
@@ -66,15 +73,19 @@ ${
   var js = ${fallback};`
 }
 
-  if(!isWF){
+  function loadFromDeploy(){
     css.forEach(function(f){ loadCSS(DEP+"/"+f); });
-    if(js) loadScript(DEP+"/"+js, true);
+    if(js) loadScript(DEP+"/"+js);
+  }
+
+  if(!isWF || !tryLocal){
+    loadFromDeploy();
     return;
   }
 
   if(js){
     var p=d.createElement("link");
-    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js; p.crossOrigin="anonymous";
+    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js;
     h.appendChild(p);
   }
   css.forEach(function(f){
@@ -89,7 +100,7 @@ ${
   });
   if(js){
     var s=loadScript(LOC+"/"+js);
-    s.onerror=function(){ loadScript(DEP+"/"+js, true); };
+    s.onerror=function(){ loadScript(DEP+"/"+js); };
   }
 
 })(document,document.head,location.hostname);
@@ -104,9 +115,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
   const localUrl = `${protocol}://localhost:${CONFIG.SERVE_PORT}`;
 
   const allJs = outputs
-    .filter(
-      (o) => o.path.endsWith(".js") && !o.path.endsWith(".js.map")
-    )
+    .filter((o) => o.path.endsWith(".js") && !o.path.endsWith(".js.map"))
     .map((o) => o.path.split("/dist/")[1]);
 
   const appJs = allJs.find((f) => f === "app.js") ?? null;
@@ -127,8 +136,8 @@ function generateIndexHtml(outputs: BuildOutput[]) {
       const badge = isPage
         ? ` <span style="font-size:0.75em;opacity:0.6">(/&ZeroWidthSpace;${slug})</span>`
         : appJs === relativePath && pageJs.length > 0
-        ? ` <span style="font-size:0.75em;opacity:0.6">(fallback)</span>`
-        : "";
+          ? ` <span style="font-size:0.75em;opacity:0.6">(fallback)</span>`
+          : "";
       return `<li>
         <a href="/${relativePath}" target="_blank" class="main-link">${relativePath}</a>${badge}
         <code class="tag">&lt;script defer src="${localUrl}/${relativePath}"&gt;&lt;/script&gt;</code>

@@ -52,6 +52,7 @@ bun dev
 - [Subscription System](./docs/subscription-system.md)
 - [Tick – Performance Timing & Metrics](./docs/tick.md)
 - [Webflow Integration](./docs/webflow-integration.md)
+- [Mobile JS Loading / Safari Privacy Fix](./docs/mobile-js-loading-fix.md)
 
 ### Integrations
 
