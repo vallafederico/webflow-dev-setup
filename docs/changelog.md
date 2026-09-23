@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] - 2026-09-23
+
+### Fixed
+
+- **Mobile JS / Safari privacy**: Loader no longer forces `crossOrigin` on classic scripts; skips localhost on phones. See [Mobile JS Loading Fix](./mobile-js-loading-fix.md).
+- **Editor detection**: Body-safe init + one shared `MutationObserver` (`handleEditor` / `releaseEditor`).
+- **Page entries**: `about` / `info` / `home` boot `App` instead of stub logs.
+
+---
+
 ## [Unreleased] - 2025-04-08
 
 ### Changed

@@ -1,1 +1,1 @@
-console.log("home");
+import "../app";
