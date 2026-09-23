@@ -19,6 +19,16 @@ export { PUBLIC_ASSET_ORIGIN, publicAssetUrl };
 
 // history.scrollRestoration = "manual";
 
+// The loader injects this bundle with createElement, which makes it async
+// (`defer` is ignored), so it can run before the document is fully parsed.
+function whenParsed(fn: () => void) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", fn, { once: true });
+  } else {
+    fn();
+  }
+}
+
 class _App {
   private scroll = Scroll;
   // pages = Pages;
@@ -26,9 +36,11 @@ class _App {
   constructor() {
     console.log("App local", performance.now().toFixed(2));
 
-    createCycles();
-    runPageIn();
-    runMount();
+    whenParsed(() => {
+      createCycles();
+      runPageIn();
+      runMount();
+    });
 
     // requestAnimationFrame(() => {
     //   setTimeout(() => tick.showWebVitals(), 1500);
