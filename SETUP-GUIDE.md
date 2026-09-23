@@ -2,6 +2,8 @@
 
 Changes made to `bin/generateResponse.ts` to replace the old per-file `onerror` handler pattern with a unified loader script.
 
+> The code below is the original refactor. `bin/generateResponse.ts` is the source of truth; it has since added the phone localhost skip ([Mobile JS Loading Fix](./docs/mobile-js-loading-fix.md)) and branch previews ([Branch Previews](./docs/branch-previews.md)).
+
 ---
 
 ## What changed
@@ -73,11 +75,13 @@ function generateLoaderScript(
   var isWF = host.endsWith(".webflow.io");
   var DEP = "${deployUrl}";
   var LOC = "${localUrl}";
+  // Phones/tablets cannot reach the developer's localhost; skip it there.
+  var tryLocal = isWF && !matchMedia("(pointer: coarse)").matches && location.search.indexOf("local=0") === -1;
 
-  function loadScript(src,cors){
+  function loadScript(src){
     var s=d.createElement("script");
-    s.src=src; s.defer=1;
-    if(cors) s.crossOrigin="anonymous";
+    s.src=src;
+    s.defer=true;
     h.appendChild(s);
     return s;
   }
@@ -100,15 +104,19 @@ ${
   var js = ${fallback};`
 }
 
-  if(!isWF){
+  function loadFromDeploy(){
     css.forEach(function(f){ loadCSS(DEP+"/"+f); });
-    if(js) loadScript(DEP+"/"+js, true);
+    if(js) loadScript(DEP+"/"+js);
+  }
+
+  if(!isWF || !tryLocal){
+    loadFromDeploy();
     return;
   }
 
   if(js){
     var p=d.createElement("link");
-    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js; p.crossOrigin="anonymous";
+    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js;
     h.appendChild(p);
   }
   css.forEach(function(f){
@@ -123,7 +131,7 @@ ${
   });
   if(js){
     var s=loadScript(LOC+"/"+js);
-    s.onerror=function(){ loadScript(DEP+"/"+js, true); };
+    s.onerror=function(){ loadScript(DEP+"/"+js); };
   }
 
 })(document,document.head,location.hostname);

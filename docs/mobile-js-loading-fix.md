@@ -17,13 +17,13 @@ On mobile (especially Safari), the site could appear stuck with no JS — or Saf
 
 **Problems**
 
-- Setting `crossOrigin="anonymous"` on classic (non-module) scripts forced a CORS fetch. Safari privacy features can block that third-party Vercel URL.
-- On `.webflow.io`, the loader always tried `localhost` first. Phones cannot reach the developer’s machine, so every load raced a failed local request before (or instead of) a reliable deploy load.
+- On `.webflow.io`, the loader always tried `https://localhost:6545` first. On a phone that address is the phone itself, with no dev server or trusted certificate, so every load made a failing request to a local address before falling back to the deploy. This is the most likely trigger for Safari's privacy prompt: a public page probing local addresses. Not yet confirmed on a physical iPhone.
+- `crossOrigin="anonymous"` was set on classic (non-module) scripts, turning them into CORS requests. That wasn't breaking loading: `vercel.json` sends `Access-Control-Allow-Origin: *`, so the CORS check passes. It's just unnecessary for classic scripts.
 
 **Fixes**
 
-- Do **not** set `crossOrigin` on the injected script / preload tags
 - Skip localhost on coarse-pointer devices (phones/tablets); load straight from deploy
+- Drop `crossOrigin` from the injected script / preload tags
 - Still allow desktop `.webflow.io` local-first with deploy fallback; use `?local=0` to force deploy
 
 ### 2. Editor detection (`src/webflow/detect-editor.ts`)

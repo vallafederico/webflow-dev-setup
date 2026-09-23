@@ -53,6 +53,7 @@ bun dev
 - [Tick – Performance Timing & Metrics](./docs/tick.md)
 - [Webflow Integration](./docs/webflow-integration.md)
 - [Mobile JS Loading / Safari Privacy Fix](./docs/mobile-js-loading-fix.md)
+- [Branch Previews on `.webflow.io`](./docs/branch-previews.md)
 
 ### Integrations
 
@@ -73,7 +74,7 @@ bun dev
 
 Paste the **unified loader script** into your Webflow site's **Custom Code → Head Code**. The dev server at `http://localhost:6545` generates the full script for you — just click to copy.
 
-The loader handles everything (JS + CSS) in a single `<script>` block:
+The loader handles everything (JS + CSS) in a single `<script>` block. Simplified version below; the dev server output also includes page routing and the [branch preview](./docs/branch-previews.md) gate:
 
 ```html
 <script>
@@ -81,11 +82,13 @@ The loader handles everything (JS + CSS) in a single `<script>` block:
   var isWF = host.endsWith(".webflow.io");
   var DEP = "{YOUR VERCEL URL}";
   var LOC = "https://localhost:6545";
+  // Phones/tablets cannot reach the developer's localhost; skip it there.
+  var tryLocal = isWF && !matchMedia("(pointer: coarse)").matches && location.search.indexOf("local=0") === -1;
 
-  function loadScript(src,cors){
+  function loadScript(src){
     var s=d.createElement("script");
-    s.src=src; s.defer=1;
-    if(cors) s.crossOrigin="anonymous";
+    s.src=src;
+    s.defer=true;
     h.appendChild(s); return s;
   }
   function loadCSS(href){
@@ -97,15 +100,19 @@ The loader handles everything (JS + CSS) in a single `<script>` block:
   var css = ["app.css"];
   var js = "app.js";
 
-  if(!isWF){
+  function loadFromDeploy(){
     css.forEach(function(f){ loadCSS(DEP+"/"+f); });
-    if(js) loadScript(DEP+"/"+js, true);
+    if(js) loadScript(DEP+"/"+js);
+  }
+
+  if(!isWF || !tryLocal){
+    loadFromDeploy();
     return;
   }
 
   if(js){
     var p=d.createElement("link");
-    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js; p.crossOrigin="anonymous";
+    p.rel="preload"; p.as="script"; p.href=DEP+"/"+js;
     h.appendChild(p);
   }
   css.forEach(function(f){
@@ -120,7 +127,7 @@ The loader handles everything (JS + CSS) in a single `<script>` block:
   });
   if(js){
     var s=loadScript(LOC+"/"+js);
-    s.onerror=function(){ loadScript(DEP+"/"+js, true); };
+    s.onerror=function(){ loadScript(DEP+"/"+js); };
   }
 
 })(document,document.head,location.hostname);
@@ -130,7 +137,9 @@ The loader handles everything (JS + CSS) in a single `<script>` block:
 **How it works:**
 
 - **Production** (non `.webflow.io`): loads JS and CSS directly from your Vercel deployment — fastest path, no fallback logic.
-- **Dev** (on `.webflow.io`): preloads deployed assets, tries local dev server first, falls back to deployed on error.
+- **Dev** (on `.webflow.io`, desktop): preloads deployed assets, tries local dev server first, falls back to deployed on error.
+- **Phones / tablets** on `.webflow.io`, or any page with `?local=0`: skips localhost and loads straight from the deployment.
+- **Branch previews** (on `.webflow.io` only): add `?js=<vercel preview url>` to load JS from a Vercel branch deployment, and/or `&css=<vercel preview url>` for CSS. Localhost is skipped, page routing still applies, and the choice is remembered for that browser tab so a client can click around and reload. `?js=off` / `?css=off` clears it. Only `https` hosts ending in `.vercel.app` are accepted; set `PREVIEW_HOST_SUFFIX` (e.g. `-your-team.vercel.app`) to restrict it to your team. Production domains ignore these parameters. See [Branch Previews](./docs/branch-previews.md).
 - **Page routing**: if you have page-specific scripts in `src/pages/`, the loader auto-generates a pages map and picks the right JS file based on the URL path (e.g. `/home` loads `home.js`). Falls back to `app.js` if no page matches. See [Multiple Entry Points](./docs/multiple-entry-points.md).
 - **CSS is fully managed by the loader** — no need for separate stylesheet tags or custom CSS inside Webflow.
 

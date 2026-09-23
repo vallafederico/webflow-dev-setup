@@ -18,7 +18,8 @@ function generateLoaderScript(
   pageJs: string[],
   cssFiles: string[],
   deployUrl: string,
-  localUrl: string
+  localUrl: string,
+  previewHostSuffix: string
 ): string {
   const cssArray = cssFiles.map((f) => `"${f}"`).join(", ");
   const hasPages = pageJs.length > 0;
@@ -34,18 +35,41 @@ function generateLoaderScript(
 
   const fallback = appJs ? `"${appJs}"` : "null";
 
-  // Classic (non-module) scripts do not need crossOrigin to run. Setting it
-  // forces a CORS fetch; Safari Advanced Tracking / Private Browsing can then
-  // block the third-party Vercel URL and offer "Reduce Privacy Protections".
-  // Localhost is only reachable from the machine running `bun dev` — phones
+  // Classic (non-module) scripts do not need crossOrigin to run, so it is not
+  // set. Localhost is only reachable from the machine running `bun dev` — phones
   // viewing webflow.io must skip it or they race a failed request every load.
   return `<script>
 (function(d,h,host){
   var isWF = host.endsWith(".webflow.io");
   var DEP = "${deployUrl}";
   var LOC = "${localUrl}";
+  var PREVIEW_HOST = "${previewHostSuffix}";
+
+  // Branch previews, staging only: ?js=<preview url>&css=<preview url>.
+  // Remembered for the tab so reloads stay on the preview; ?js=off clears it.
+  function preview(key){
+    var k="wf-preview-"+key, v=new URLSearchParams(location.search).get(key);
+    try{
+      if(v==="off"){ sessionStorage.removeItem(k); return null; }
+      if(v===null) v=sessionStorage.getItem(k);
+    }catch(e){}
+    if(!v) return null;
+    v=v.replace(/^["']|["']$/g,"");
+    try{ var u=new URL(v.indexOf("://")<0 ? "https://"+v : v); }catch(e){ u=null; }
+    // Anyone can craft a staging link, so only accept our preview hosts.
+    if(!u || u.protocol!=="https:" || !u.hostname.endsWith(PREVIEW_HOST)){
+      console.warn("[loader] ignoring "+key+" preview, not an https *"+PREVIEW_HOST+" URL:", v);
+      return null;
+    }
+    try{ sessionStorage.setItem(k,u.origin); }catch(e){}
+    return u.origin;
+  }
+  var JS_DEP = isWF ? preview("js") : null;
+  var CSS_DEP = isWF ? preview("css") : null;
+  if(JS_DEP || CSS_DEP) console.info("[loader] preview", { js: JS_DEP || DEP, css: CSS_DEP || DEP });
+
   // Phones/tablets cannot reach the developer's localhost; skip it there.
-  var tryLocal = isWF && !matchMedia("(pointer: coarse)").matches && location.search.indexOf("local=0") === -1;
+  var tryLocal = isWF && !JS_DEP && !CSS_DEP && !matchMedia("(pointer: coarse)").matches && location.search.indexOf("local=0") === -1;
 
   function loadScript(src){
     var s=d.createElement("script");
@@ -74,8 +98,8 @@ ${
 }
 
   function loadFromDeploy(){
-    css.forEach(function(f){ loadCSS(DEP+"/"+f); });
-    if(js) loadScript(DEP+"/"+js);
+    css.forEach(function(f){ loadCSS((CSS_DEP || DEP)+"/"+f); });
+    if(js) loadScript((JS_DEP || DEP)+"/"+js);
   }
 
   if(!isWF || !tryLocal){
@@ -114,6 +138,10 @@ function generateIndexHtml(outputs: BuildOutput[]) {
   const protocol = process.env.USE_SSL === "true" ? "https" : "http";
   const localUrl = `${protocol}://localhost:${CONFIG.SERVE_PORT}`;
 
+  const suffixEnv = process.env.PREVIEW_HOST_SUFFIX?.trim();
+  const previewHostSuffix =
+    suffixEnv && /^[a-z0-9.-]+$/i.test(suffixEnv) ? suffixEnv : ".vercel.app";
+
   const allJs = outputs
     .filter((o) => o.path.endsWith(".js") && !o.path.endsWith(".js.map"))
     .map((o) => o.path.split("/dist/")[1]);
@@ -126,7 +154,14 @@ function generateIndexHtml(outputs: BuildOutput[]) {
     .map((o) => o.path.split("/dist/")[1]);
 
   const loaderScript = hasVercel
-    ? generateLoaderScript(appJs, pageJs, cssFiles, vercelUrl, localUrl)
+    ? generateLoaderScript(
+        appJs,
+        pageJs,
+        cssFiles,
+        vercelUrl,
+        localUrl,
+        previewHostSuffix
+      )
     : null;
 
   const jsLinks = allJs
@@ -318,7 +353,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         ${
           loaderScript
             ? `<h2>Loader Script</h2>
-        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code>, falls back to deployed.</p>
+        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code>, falls back to deployed. To share a Vercel branch on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>
         <div class="loader-box">
           <span class="copy-hint">click to copy</span>
           <pre>${escapeHtml(loaderScript)}</pre>
