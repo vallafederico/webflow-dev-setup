@@ -46,6 +46,7 @@ function generateLoaderScript(
   var PREVIEW_HOST = "${previewHostSuffix}";
 
   // Branch previews, staging only: ?js=<preview url>&css=<preview url>.
+  // ?js=none / ?css=none skip loading that part entirely (debugging).
   // Remembered for the tab so reloads stay on the preview; ?js=off clears it.
   function preview(key){
     var k="wf-preview-"+key, v=new URLSearchParams(location.search).get(key);
@@ -55,6 +56,10 @@ function generateLoaderScript(
     }catch(e){}
     if(!v) return null;
     v=v.replace(/^["']|["']$/g,"");
+    if(v==="none"){
+      try{ sessionStorage.setItem(k,v); }catch(e){}
+      return v;
+    }
     try{ var u=new URL(v.indexOf("://")<0 ? "https://"+v : v); }catch(e){ u=null; }
     // Anyone can craft a staging link, so only accept our preview hosts.
     if(!u || u.protocol!=="https:" || !u.hostname.endsWith(PREVIEW_HOST)){
@@ -98,8 +103,8 @@ ${
 }
 
   function loadFromDeploy(){
-    css.forEach(function(f){ loadCSS((CSS_DEP || DEP)+"/"+f); });
-    if(js) loadScript((JS_DEP || DEP)+"/"+js);
+    if(CSS_DEP!=="none") css.forEach(function(f){ loadCSS((CSS_DEP || DEP)+"/"+f); });
+    if(js && JS_DEP!=="none") loadScript((JS_DEP || DEP)+"/"+js);
   }
 
   if(!isWF || !tryLocal){

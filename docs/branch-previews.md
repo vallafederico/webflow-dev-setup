@@ -17,6 +17,7 @@ https://your-site.webflow.io/about?js=https://your-project-git-feature-your-team
 |---|---|
 | `?js=<preview url>` | Load the JS entry for this page from the preview |
 | `?css=<preview url>` | Load the CSS files from the preview |
+| `?js=none` / `?css=none` | Don't load our JS / CSS at all, to check whether an issue comes from the bundle or from Webflow and third-party scripts |
 | `?js=off` / `?css=off` | Clear that preview and go back to normal loading |
 
 - JS and CSS switch independently. Whatever isn't passed loads from the production deployment (`VERCEL_URL`).

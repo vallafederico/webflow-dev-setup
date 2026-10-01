@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Branch previews on `.webflow.io`**: `?js=<vercel preview url>` and `&css=<vercel preview url>` load JS / CSS from a Vercel branch deployment, remembered per tab, cleared with `?js=off` / `?css=off`. Only `https` hosts ending in `PREVIEW_HOST_SUFFIX` (default `.vercel.app`) are accepted; production domains ignore them. See [Branch Previews](./branch-previews.md).
+- **Branch previews on `.webflow.io`**: `?js=<vercel preview url>` and `&css=<vercel preview url>` load JS / CSS from a Vercel branch deployment, remembered per tab, cleared with `?js=off` / `?css=off`. Only `https` hosts ending in `PREVIEW_HOST_SUFFIX` (default `.vercel.app`) are accepted; production domains ignore them. `?js=none` / `?css=none` skip loading the bundle on staging for debugging. See [Branch Previews](./branch-previews.md).
 
 ### Fixed
 
