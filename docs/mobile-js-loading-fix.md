@@ -25,7 +25,7 @@ On mobile (especially Safari), the site could appear stuck with no JS — or Saf
 - Skip localhost on coarse-pointer devices (phones/tablets); load straight from deploy
 - Drop `crossOrigin` from the injected script / preload tags
 - Still allow desktop `.webflow.io` local-first with deploy fallback; use `?local=0` to force deploy
-- `?local=1` tries localhost on touch devices anyway, for the iOS Simulator, which shares the Mac's localhost. Kept for the tab, cleared by `?local=0`. Over HTTPS, the Simulator must trust mkcert's root certificate: drag `rootCA.pem` (folder from `mkcert -CAROOT`) onto the Simulator, then enable it in Settings → General → About → Certificate Trust Settings.
+- `?local=1` tries localhost on touch devices anyway, for the iOS Simulator, which shares the Mac's localhost. Kept for the tab, cleared by `?local=0`. Over HTTPS, the Simulator must trust the repo's certificate authority: `xcrun simctl keychain booted add-root-cert certs/ca.crt`. See [SSL Setup](./ssl.md#ios-simulator).
 
 ### 2. Editor detection (`src/webflow/detect-editor.ts`)
 
