@@ -74,7 +74,15 @@ function generateLoaderScript(
   if(JS_DEP || CSS_DEP) console.info("[loader] preview", { js: JS_DEP || DEP, css: CSS_DEP || DEP });
 
   // Phones/tablets cannot reach the developer's localhost; skip it there.
-  var tryLocal = isWF && !JS_DEP && !CSS_DEP && !matchMedia("(pointer: coarse)").matches && location.search.indexOf("local=0") === -1;
+  // ?local=1 tries it anyway (iOS Simulator shares the Mac's localhost) and
+  // is kept for the tab; ?local=0 forces the deploy and clears it.
+  var LOCAL = new URLSearchParams(location.search).get("local"), forceLocal = LOCAL==="1";
+  try{
+    if(LOCAL==="1") sessionStorage.setItem("wf-local","1");
+    if(LOCAL==="0") sessionStorage.removeItem("wf-local");
+    forceLocal = sessionStorage.getItem("wf-local")==="1";
+  }catch(e){}
+  var tryLocal = isWF && !JS_DEP && !CSS_DEP && LOCAL!=="0" && (forceLocal || !matchMedia("(pointer: coarse)").matches);
 
   function loadScript(src){
     var s=d.createElement("script");
@@ -358,7 +366,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         ${
           loaderScript
             ? `<h2>Loader Script</h2>
-        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code>, falls back to deployed. To share a Vercel branch on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>
+        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code> (desktop; <code>?local=1</code> to force it on touch devices like the iOS Simulator, <code>?local=0</code> to skip it), falls back to deployed. To share a Vercel branch on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>
         <div class="loader-box">
           <span class="copy-hint">click to copy</span>
           <pre>${escapeHtml(loaderScript)}</pre>
