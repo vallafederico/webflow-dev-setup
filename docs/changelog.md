@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] - 2026-10-06
+
+### Fixed
+
+- **Bundle running before `<body>` on phones**: The loader now writes the deploy-path `<script defer>` with `document.write` while the page is parsing, so `defer` is honoured. Appended scripts ignore `defer`, so a cached bundle could run in `<head>`; any code touching `document.body` at startup then crashed the whole bundle and Safari on iOS offered to "reduce advanced privacy protections". Applies to production domains, phones and branch previews; the desktop localhost path is unchanged. See [Loader Script](./loader.md#why-the-loader-looks-the-way-it-does).
+
+---
+
 ## [Unreleased] - 2026-09-23
 
 ### Added

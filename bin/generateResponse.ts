@@ -92,6 +92,18 @@ function generateLoaderScript(
     return s;
   }
 
+  // Injected scripts ignore defer, so a cached bundle can run before <body>
+  // exists. A tag written while the parser runs is parser-inserted and keeps
+  // defer. Only safe synchronously: document.write after parsing (or from a
+  // callback) would wipe the page, hence the currentScript check.
+  function deferScript(src){
+    if(d.readyState==="loading" && d.currentScript){
+      d.write('<script defer src="'+src.replace(/"/g,"&quot;")+'"><\\/script>');
+    } else {
+      loadScript(src);
+    }
+  }
+
   function loadCSS(href){
     var l=d.createElement("link");
     l.rel="stylesheet"; l.href=href;
@@ -112,7 +124,7 @@ ${
 
   function loadFromDeploy(){
     if(CSS_DEP!=="none") css.forEach(function(f){ loadCSS((CSS_DEP || DEP)+"/"+f); });
-    if(js && JS_DEP!=="none") loadScript((JS_DEP || DEP)+"/"+js);
+    if(js && JS_DEP!=="none") deferScript((JS_DEP || DEP)+"/"+js);
   }
 
   if(!isWF || !tryLocal){

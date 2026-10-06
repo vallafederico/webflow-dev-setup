@@ -92,6 +92,11 @@ The loader handles everything (JS + CSS) in a single `<script>` block. Simplifie
     s.defer=true;
     h.appendChild(s); return s;
   }
+  // Written while parsing so defer applies; appended scripts ignore it.
+  function deferScript(src){
+    if(d.readyState==="loading" && d.currentScript) d.write('<script defer src="'+src+'"><\/script>');
+    else loadScript(src);
+  }
   function loadCSS(href){
     var l=d.createElement("link");
     l.rel="stylesheet"; l.href=href;
@@ -103,7 +108,7 @@ The loader handles everything (JS + CSS) in a single `<script>` block. Simplifie
 
   function loadFromDeploy(){
     css.forEach(function(f){ loadCSS(DEP+"/"+f); });
-    if(js) loadScript(DEP+"/"+js);
+    if(js) deferScript(DEP+"/"+js);
   }
 
   if(!isWF || !tryLocal){
@@ -137,7 +142,7 @@ The loader handles everything (JS + CSS) in a single `<script>` block. Simplifie
 
 **How it works:**
 
-- **Production** (non `.webflow.io`): loads JS and CSS directly from your Vercel deployment — fastest path, no fallback logic.
+- **Production** (non `.webflow.io`): loads JS and CSS directly from your Vercel deployment — fastest path, no fallback logic. The JS tag is written into the page so `defer` is honoured and the bundle never runs before `<body>` exists (see [Loader Script](./docs/loader.md#why-the-loader-looks-the-way-it-does)).
 - **Dev** (on `.webflow.io`, desktop): preloads deployed assets, tries local dev server first, falls back to deployed on error.
 - **Phones / tablets** on `.webflow.io`, or any page with `?local=0`: skips localhost and loads straight from the deployment.
 - **iOS Simulator** (or any touch device that can reach your dev server): add `?local=1` to try localhost anyway, with the usual fallback. It's remembered for the tab; `?local=0` clears it. On the HTTPS staging domain this needs `USE_SSL=true` and the repo's certificate authority trusted in the Simulator (see [SSL Setup](./docs/ssl.md#ios-simulator)).

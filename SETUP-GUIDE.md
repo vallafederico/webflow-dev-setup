@@ -86,6 +86,15 @@ function generateLoaderScript(
     return s;
   }
 
+  // Written while parsing so defer applies; appended scripts ignore it.
+  function deferScript(src){
+    if(d.readyState==="loading" && d.currentScript){
+      d.write('<script defer src="'+src.replace(/"/g,"&quot;")+'"><\\/script>');
+    } else {
+      loadScript(src);
+    }
+  }
+
   function loadCSS(href){
     var l=d.createElement("link");
     l.rel="stylesheet"; l.href=href;
@@ -106,7 +115,7 @@ ${
 
   function loadFromDeploy(){
     css.forEach(function(f){ loadCSS(DEP+"/"+f); });
-    if(js) loadScript(DEP+"/"+js);
+    if(js) deferScript(DEP+"/"+js);
   }
 
   if(!isWF || !tryLocal){
