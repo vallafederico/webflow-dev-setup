@@ -158,3 +158,44 @@ describe("main", () => {
     expect(await main(["--nope"])).toBe(2);
   });
 });
+
+describe("sequential tier", () => {
+  test("runs one check at a time, in order, so a later check can read an earlier one's output", async () => {
+    const order: string[] = [];
+    const step = (name: string, ms: number): Check => ({
+      name,
+      tier: "all",
+      run: async () => {
+        order.push(`start ${name}`);
+        await Bun.sleep(ms);
+        order.push(`end ${name}`);
+        return toResult(name, []);
+      },
+    });
+    const outcome = await runChecks([step("slow", 30), step("quick", 0)], ctx, {
+      sequential: true,
+    });
+    expect(order).toEqual([
+      "start slow",
+      "end slow",
+      "start quick",
+      "end quick",
+    ]);
+    expect(outcome.results.map((r) => r.name)).toEqual(["slow", "quick"]);
+  });
+
+  test("a check that throws doesn't stop the ones after it, and the run is exit 2", async () => {
+    const broken: Check = {
+      name: "build",
+      tier: "all",
+      run: async () => {
+        throw new ToolFailure("no dist");
+      },
+    };
+    const outcome = await runChecks([broken, check("after", [])], ctx, {
+      sequential: true,
+    });
+    expect(outcome.results.map((r) => r.name)).toEqual(["build", "after"]);
+    expect(exitCodeFor(outcome)).toBe(2);
+  });
+});

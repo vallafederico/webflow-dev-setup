@@ -31,10 +31,20 @@ function makeRepo(files: Record<string, string>): string {
   cpSync(path.join(REPO, "tsconfig.json"), path.join(root, "tsconfig.json"));
   cpSync(path.join(REPO, "bin", "check"), path.join(root, "bin", "check"), {
     recursive: true,
+    // The browser run's entries import the real src/, which this repo lacks.
     filter: (source) =>
-      !source.includes("fixtures") && !source.endsWith(".test.ts"),
+      !source.includes("fixtures") &&
+      !source.endsWith(".test.ts") &&
+      !source.endsWith("fixture-entry.ts") &&
+      !source.endsWith("runtime-build.ts"),
   });
-  for (const name of ["sync-skills.ts", "new-module.ts"]) {
+  // The tier "all" checks import these when the registry loads.
+  for (const name of [
+    "sync-skills.ts",
+    "new-module.ts",
+    "generate-worker.ts",
+    "project-config.ts",
+  ]) {
     cpSync(path.join(REPO, "bin", name), path.join(root, "bin", name));
   }
   const defaults: Record<string, string> = {
@@ -92,10 +102,25 @@ describe("the documented JSON command", () => {
     expect(JSON.parse(run.stdout).ok).toBe(true);
   });
 
-  test("--all exits 2 until tier-all checks exist, and says why", () => {
-    const run = documented(makeRepo({}), "--all");
+  test("--all in a repo that can't build is exit 2, never a pass", () => {
+    // The stripped repo has no bin/build.ts, so the build check fails and
+    // bundle and host have no dist/ to read.
+    const run = documented(makeRepo({}), "--all", "--json");
     expect(run.code).toBe(2);
-    expect(run.stderr).toContain("no tier-all checks");
+    const checks = JSON.parse(run.stdout).checks as {
+      name: string;
+      ok: boolean;
+    }[];
+    const byName = Object.fromEntries(checks.map((c) => [c.name, c.ok]));
+    expect(Object.keys(byName).slice(-4)).toEqual([
+      "build",
+      "bundle",
+      "host",
+      "runtime",
+    ]);
+    expect(byName.build).toBe(false);
+    expect(byName.bundle).toBe(false);
+    expect(byName.host).toBe(false);
   });
 });
 

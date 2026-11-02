@@ -1,0 +1,9 @@
+{
+  "taxi": false,
+  "hookTimeoutMs": 10000,
+  "budgets": {
+    "app.js": 63850,
+    "pages/*.js": 63850,
+    "app.css": 270
+  }
+}

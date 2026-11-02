@@ -29,57 +29,65 @@ function byLocation(a: Finding, b: Finding): number {
   return a.message < b.message ? -1 : a.message > b.message ? 1 : 0;
 }
 
-/** Runs the checks concurrently and returns them in registry order. */
+/**
+ * Runs the checks and returns them in registry order. They run concurrently,
+ * unless `sequential` is set for checks that depend on each other's output.
+ */
 export async function runChecks(
   checks: Check[],
-  ctx: CheckContext
+  ctx: CheckContext,
+  { sequential = false }: { sequential?: boolean } = {}
 ): Promise<RunOutcome> {
   const failures = new Map<string, string>();
-  const results = await Promise.all(
-    checks.map(async (check): Promise<CheckResult> => {
-      try {
-        const result = await check.run(ctx);
-        return {
-          name: check.name,
-          ok: result.ok,
-          findings: result.findings
-            .map((finding) => ({
-              rule: finding.rule,
-              severity: finding.severity,
-              file: finding.file,
-              line: finding.line,
-              message: scrub(finding.message, ctx.root),
-              fix: scrub(finding.fix, ctx.root),
-            }))
-            .sort(byLocation),
-        };
-      } catch (error) {
-        // A crash is a tool failure too, so it can't read as a pass.
-        const failure =
-          error instanceof ToolFailure
-            ? error
-            : new ToolFailure(
-                `${check.name} crashed: ${(error as Error)?.message ?? String(error)}`
-              );
-        const message = scrub(failure.message, ctx.root);
-        failures.set(check.name, message);
-        return {
-          name: check.name,
-          ok: false,
-          findings: [
-            {
-              rule: TOOL_FAILURE_RULE,
-              severity: "error",
-              file: failure.file,
-              line: 1,
-              message,
-              fix: failure.fix,
-            },
-          ],
-        };
-      }
-    })
-  );
+  const runOne = async (check: Check): Promise<CheckResult> => {
+    try {
+      const result = await check.run(ctx);
+      return {
+        name: check.name,
+        ok: result.ok,
+        findings: result.findings
+          .map((finding) => ({
+            rule: finding.rule,
+            severity: finding.severity,
+            file: finding.file,
+            line: finding.line,
+            message: scrub(finding.message, ctx.root),
+            fix: scrub(finding.fix, ctx.root),
+          }))
+          .sort(byLocation),
+      };
+    } catch (error) {
+      // A crash is a tool failure too, so it can't read as a pass.
+      const failure =
+        error instanceof ToolFailure
+          ? error
+          : new ToolFailure(
+              `${check.name} crashed: ${(error as Error)?.message ?? String(error)}`
+            );
+      const message = scrub(failure.message, ctx.root);
+      failures.set(check.name, message);
+      return {
+        name: check.name,
+        ok: false,
+        findings: [
+          {
+            rule: TOOL_FAILURE_RULE,
+            severity: "error",
+            file: failure.file,
+            line: 1,
+            message,
+            fix: failure.fix,
+          },
+        ],
+      };
+    }
+  };
+  const results: CheckResult[] = [];
+  if (sequential) {
+    for (const check of checks) results.push(await runOne(check));
+  } else {
+    results.push(...(await Promise.all(checks.map(runOne))));
+  }
   return { results, failures };
 }
 
@@ -186,7 +194,21 @@ export async function main(argv: string[]): Promise<number> {
   }
   const root = path.resolve(import.meta.dir, "..", "..");
   const selected = registry.filter((check) => all || check.tier === "fast");
-  const outcome = await runChecks(selected, { root, all });
+  // The fast checks are independent. The rest build and read dist/, so they
+  // run after them, one at a time and in registry order.
+  const fast = await runChecks(
+    selected.filter((check) => check.tier === "fast"),
+    { root, all }
+  );
+  const slow = await runChecks(
+    selected.filter((check) => check.tier === "all"),
+    { root, all },
+    { sequential: true }
+  );
+  const outcome: RunOutcome = {
+    results: [...fast.results, ...slow.results],
+    failures: new Map([...fast.failures, ...slow.failures]),
+  };
   process.stdout.write(
     argv.includes("--json") ? toJson(outcome) : toHuman(outcome)
   );
