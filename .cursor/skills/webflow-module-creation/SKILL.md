@@ -26,7 +26,7 @@ import { onMount, onDestroy } from "@/modules/_";
  */
 export default function (element: HTMLElement, dataset: DOMStringMap) {
   // Setup logic here
-  
+
   onMount(() => {
     // Initialization code
   });

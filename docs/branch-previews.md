@@ -6,7 +6,7 @@ Developers see branch changes through localhost. Clients can't, so the loader ac
 
 ## Usage
 
-Push the branch, wait for its preview deployment, then share a staging link with the preview URL. On Vercel it looks like `your-project-git-feature-your-team.vercel.app`, on Cloudflare like `feature-your-project.your-subdomain.workers.dev`:
+Push the branch, wait for its preview deployment, then share a staging link with the preview URL. On Vercel it looks like `your-project-git-feature-your-team.vercel.app`, on Cloudflare like `feature-your-project.your-subdomain.workers.dev` (not yet confirmed on a real push, see [Hosting](./hosting.md#cloudflare)):
 
 ```
 https://your-site.webflow.io/?js=https://your-project-git-feature-your-team.vercel.app
@@ -42,10 +42,10 @@ The suffix is `previewHostSuffix` in `project.config.json`, written by `pnpm con
 
 | Host | Suffix | What it admits |
 |---|---|---|
-| Cloudflare | `-<name>.<subdomain>.workers.dev` | This project's previews, and any Worker in the same account whose name ends in `-<name>`. Those are all yours |
+| Cloudflare | `-<name>.<subdomain>.workers.dev` | This project's previews, and any Worker in the same account whose name ends in `-<name>`. Those are all yours (not yet confirmed on a real push, see [Hosting](./hosting.md#cloudflare)) |
 | Vercel | `-<team>.vercel.app` | Any host ending in your team slug, which isn't exclusive to the project or the team |
 
-On Vercel the suffix only proves the hostname ends in your team slug. A Vercel project on another account whose name ends in `-your-team` would also pass. The check runs on `.webflow.io` only, needs someone to open a crafted link, and is per tab (`?js=off` clears it). If that matters, put previews on a custom preview domain and use that as the suffix.
+On Vercel the suffix only proves the hostname ends in your team slug, so a project on another account with a matching name would also pass. What that allows, and how far it reaches, is in [Hosting](./hosting.md#preview-allowlist).
 
 The suffix is baked into the loader when the dev server generates it. Regenerate and re-paste the loader after changing it. `pnpm connect` refuses a suffix without a leading `-` or `.`, so `yourteam.vercel.app` can't also match `evil-notyourteam.vercel.app`.
 

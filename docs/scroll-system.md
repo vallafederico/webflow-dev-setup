@@ -2,6 +2,8 @@
 
 This document outlines the enhanced scroll system built on top of Lenis, providing smooth scrolling with advanced subscription capabilities and Webflow editor integration.
 
+> Examples omit `onEditor`; `editor/handled` requires it for modules using `Raf.add`, `onView` or GSAP. See [House Rules](./house-rules.md).
+
 ## Overview
 
 The scroll system provides:

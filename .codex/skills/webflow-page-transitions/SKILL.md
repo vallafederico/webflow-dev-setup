@@ -11,12 +11,7 @@ This skill covers how to work with the Taxi.js transition system and how it trig
 
 Taxi is off in the template: it is commented out in `src/app.ts` and `src/lib/pages.ts`. Links are full page loads, so `onDestroy` and `onPageOut` never run. `onPageIn` and `onMount` run once per load.
 
-To enable it:
-
-1. In `src/lib/pages.ts`, uncomment `export const Pages = new _Pages();`.
-2. In `src/app.ts`, uncomment `import { Pages } from "@lib/pages";` and `pages = Pages;`.
-3. In the Webflow markup, wrap the page in an element with `data-taxi`, and put `data-taxi-view` on the content inside it that changes per page. Taxi reads both from every page it fetches, and throws without `data-taxi-view`.
-4. Set `"taxi": true` in `checks.config.json`, so the browser check also follows a real link between pages.
+The steps to enable it (uncommenting in `src/lib/pages.ts` and `src/app.ts`, the `data-taxi` and `data-taxi-view` markup, and `"taxi": true` in `checks.config.json`) are in one place: [Integration with Taxi.js](../../../docs/component-lifecycle.md#integration-with-taxijs). Taxi throws without `data-taxi-view` on the page content.
 
 ## How it Works (once enabled)
 1. **Trigger**: User clicks a valid link.
@@ -32,7 +27,7 @@ Use the `onPageIn` and `onPageOut` hooks inside your modules to create seamless 
 import { onEditor, onPageIn, onPageOut } from "@/modules/_";
 import gsap from "@lib/gsap";
 
-export default function(element: HTMLElement) {
+export default function (element: HTMLElement) {
   let inEditor = false;
   onEditor((isEditor) => {
     inEditor = isEditor;
@@ -41,21 +36,24 @@ export default function(element: HTMLElement) {
   // Entrance animation
   onPageIn(async () => {
     if (inEditor) return;
-    await gsap.from(element, { 
-      opacity: 0, 
-      y: 30, 
-      duration: 1, 
-      ease: "power3.out" 
+    await gsap.from(element, {
+      opacity: 0,
+      y: 30,
+      duration: 1,
+      ease: "power3.out",
     });
   });
 
   // Exit animation
-  onPageOut(async () => {
-    await gsap.to(element, { 
-      opacity: 0, 
-      duration: 0.5 
-    });
-  }, { element }); // { element } ensures it only runs if visible
+  onPageOut(
+    async () => {
+      await gsap.to(element, {
+        opacity: 0,
+        duration: 0.5,
+      });
+    },
+    { element }
+  ); // { element } ensures it only runs if visible
 }
 ```
 

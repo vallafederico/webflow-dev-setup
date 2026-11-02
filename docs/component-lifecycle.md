@@ -2,6 +2,8 @@
 
 This document outlines the component lifecycle system and how it integrates with page transitions using the Taxi.js library.
 
+> Examples omit `onEditor`; `editor/handled` requires it for modules using `Raf.add`, `onView` or GSAP. See [House Rules](./house-rules.md).
+
 > **Taxi is opt-in and off by default.** Without it, links are full page loads: `onPageIn` and `onMount` run once per load, and `onDestroy` and `onPageOut` never run. The steps to enable it are in [Integration with Taxi.js](#integration-with-taxijs).
 
 ## Overview
@@ -35,7 +37,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 - **Trigger**: Called when the page enters and components are initialized
 - **Purpose**: Set up component state, initialize variables, prepare component for use
-- **Execution**: Synchronous, runs after `createCycles()` and after `runPageIn()` has finished
+- **Execution**: Synchronous, runs after `createCycles()`, and after `runPageIn()` has started on a normal load, and after it has finished once Taxi is on
 - **Use Case**: Perfect for one-time setup that doesn't involve animations
 
 ```typescript
@@ -187,8 +189,8 @@ onMount(() => {
 ```typescript
 const track = onTrack(element, {
   bounds: [0, 1], // Track from 0% to 100% of viewport
-  top: "center", // Start when element center hits viewport top
-  bottom: "center", // End when element center hits viewport bottom
+  top: "center", // Start when the element's top reaches the viewport center
+  bottom: "center", // End when the element's bottom reaches the viewport center
   callback: (value) => {
     // value goes from 0 to 1 as element scrolls through viewport
     gsap.set(element, {
@@ -218,7 +220,7 @@ import { Raf } from "@lib/subs";
 // Subscribe to animation frame updates
 const unsubscribe = Raf.add(({ deltaTime, time }) => {
   // deltaTime: time since last frame in seconds
-  // time: total time since start (scaled down by 0.01)
+  // time: total time since start in seconds
 
   // Update element position based on time
   element.style.transform = `translateX(${Math.sin(time) * 50}px)`;
@@ -469,7 +471,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 Taxi.js is not active in the template: it is commented out in `src/app.ts` and `src/lib/pages.ts`. To enable it:
 
 1. In `src/lib/pages.ts`, uncomment `export const Pages = new _Pages();`.
-2. In `src/app.ts`, uncomment `import { Pages } from "@lib/pages";` and `pages = Pages;`.
+2. In `src/app.ts`, uncomment `import { Pages } from "@lib/pages";`, delete `import type { _Pages }`, the `// Set by...` comment and `pages?: _Pages;`, and uncomment `pages = Pages;`. Left in, the old type import and field fail `pnpm check`.
 3. In the Webflow markup, wrap the page in an element with `data-taxi` and put `data-taxi-view` on the content inside it that changes per page. Add `data-taxi-ignore` to links Taxi should leave alone.
 4. Set `"taxi": true` in `checks.config.json`, so the browser check also follows a real link.
 

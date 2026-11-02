@@ -2,6 +2,8 @@
 
 This document outlines the enhanced observer and track systems, providing advanced viewport detection and scroll tracking capabilities with efficient memory management.
 
+> Examples omit `onEditor`; `editor/handled` requires it for modules using `Raf.add`, `onView` or GSAP. See [House Rules](./house-rules.md).
+
 ## Overview
 
 The system provides:
@@ -178,7 +180,7 @@ const track = new Track(element, {
 
 ```typescript
 interface TrackConfig {
-  bounds: [number, number]; // Output range [min, max]
+  bounds: [number, number]; // Output range [min, max]. Output is clamped to 0-1, so use [0, 1] and scale in the callback
   top: "top" | "center" | "bottom"; // Start trigger point
   bottom: "top" | "center" | "bottom"; // End trigger point
   callback?: (value: number) => void; // Progress callback
@@ -187,11 +189,11 @@ interface TrackConfig {
 
 ### Trigger Points
 
-The track system supports three trigger points:
+`top` and `bottom` each take a position in the viewport:
 
-- **"top"**: Element's top edge
-- **"center"**: Element's center point
-- **"bottom"**: Element's bottom edge
+- **`top`** is where the element's top edge must be for tracking to start (value 0).
+- **`bottom`** is where the element's bottom edge must be for tracking to end (value 1).
+- Each can be `"top"`, `"center"` or `"bottom"` of the viewport. The default, `top: "bottom"` and `bottom: "top"`, tracks from the element entering at the bottom to it leaving at the top.
 
 ### Basic Usage
 
@@ -199,8 +201,8 @@ The track system supports three trigger points:
 export default function (element: HTMLElement, dataset: DOMStringMap) {
   const track = new Track(element, {
     bounds: [0, 1], // Output 0-1
-    top: "bottom", // Start when bottom hits viewport top
-    bottom: "top", // End when top hits viewport bottom
+    top: "bottom", // Start when the element's top reaches the viewport bottom
+    bottom: "top", // End when the element's bottom reaches the viewport top
     callback: (value) => {
       // value goes from 0 to 1 as element scrolls through viewport
       element.style.setProperty("--scroll-progress", value.toString());
@@ -220,12 +222,12 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 const track = new Track(element, {
-  bounds: [0, 200], // Move 200px
+  bounds: [0, 1], // Output is clamped to 0-1, so scale it in the callback
   top: "bottom",
   bottom: "top",
   callback: (value) => {
     // Parallax effect
-    element.style.transform = `translateY(${value}px)`;
+    element.style.transform = `translateY(${value * 200}px)`;
   },
 });
 ```
@@ -234,11 +236,11 @@ const track = new Track(element, {
 
 ```typescript
 const track = new Track(element, {
-  bounds: [0, 360], // Rotate 360 degrees
+  bounds: [0, 1], // Output is clamped to 0-1, so scale it in the callback
   top: "center",
   bottom: "center",
   callback: (value) => {
-    element.style.transform = `rotate(${value}deg)`;
+    element.style.transform = `rotate(${value * 360}deg)`;
   },
 });
 ```

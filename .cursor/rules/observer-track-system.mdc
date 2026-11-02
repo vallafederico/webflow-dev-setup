@@ -96,8 +96,8 @@ import { Track } from "@/modules/_/track";
 
 const track = new Track(element, {
   bounds: [0, 1], // Output 0-1
-  top: "bottom", // Start when bottom hits viewport top
-  bottom: "top", // End when top hits viewport bottom
+  top: "bottom", // Start when the element's top reaches the viewport bottom
+  bottom: "top", // End when the element's bottom reaches the viewport top
   callback: (value) => {
     // value goes from 0 to 1 as element scrolls through viewport
     element.style.setProperty("--scroll-progress", value.toString());
@@ -116,20 +116,20 @@ onDestroy(() => {
 // Different trigger point combinations
 const track1 = new Track(element, {
   bounds: [0, 1],
-  top: "bottom", // Start when bottom hits viewport top
-  bottom: "top", // End when top hits viewport bottom
+  top: "bottom", // Start when the element's top reaches the viewport bottom
+  bottom: "top", // End when the element's bottom reaches the viewport top
 });
 
 const track2 = new Track(element, {
   bounds: [0, 1],
-  top: "center", // Start when center hits viewport top
-  bottom: "center", // End when center hits viewport bottom
+  top: "center", // Start when the element's top reaches the viewport center
+  bottom: "center", // End when the element's bottom reaches the viewport center
 });
 
 const track3 = new Track(element, {
   bounds: [0, 1],
-  top: "top", // Start when top hits viewport top
-  bottom: "bottom", // End when bottom hits viewport bottom
+  top: "top", // Start when the element's top reaches the viewport top
+  bottom: "bottom", // End when the element's bottom reaches the viewport bottom
 });
 ```
 
@@ -138,21 +138,21 @@ const track3 = new Track(element, {
 ```typescript
 // Parallax effect
 const track = new Track(element, {
-  bounds: [0, 200], // Move 200px
+  bounds: [0, 1], // Output is clamped to 0-1, so scale it in the callback
   top: "bottom",
   bottom: "top",
   callback: (value) => {
-    element.style.transform = `translateY(${value}px)`;
+    element.style.transform = `translateY(${value * 200}px)`;
   },
 });
 
 // Rotation effect
 const track = new Track(element, {
-  bounds: [0, 360], // Rotate 360 degrees
+  bounds: [0, 1], // Output is clamped to 0-1, so scale it in the callback
   top: "center",
   bottom: "center",
   callback: (value) => {
-    element.style.transform = `rotate(${value}deg)`;
+    element.style.transform = `rotate(${value * 360}deg)`;
   },
 });
 
@@ -220,6 +220,11 @@ onDestroy(() => {
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   const children = Array.from(element.children) as HTMLElement[];
 
   children.forEach((child, index) => {
@@ -292,7 +297,7 @@ interface ObserveEventData {
 
 ```typescript
 interface TrackConfig {
-  bounds: [number, number]; // Output range [min, max]
+  bounds: [number, number]; // Output range [min, max]. Output is clamped to 0-1, so use [0, 1] and scale in the callback
   top: "top" | "center" | "bottom"; // Start trigger point
   bottom: "top" | "center" | "bottom"; // End trigger point
   callback?: (value: number) => void; // Progress callback

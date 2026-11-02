@@ -41,10 +41,13 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
     await gsap.from(element, { opacity: 0, y: 20, duration: 0.8 });
   });
 
-  onPageOut(async () => {
-    // Animate out
-    await gsap.to(element, { opacity: 0, duration: 0.4 });
-  }, { element }); // Pass { element } to only animate if visible
+  onPageOut(
+    async () => {
+      // Animate out
+      await gsap.to(element, { opacity: 0, duration: 0.4 });
+    },
+    { element }
+  ); // Pass { element } to only animate if visible
 
   onDestroy(() => {
     // Cleanup: remove listeners, destroy GSAP instances, stop observers

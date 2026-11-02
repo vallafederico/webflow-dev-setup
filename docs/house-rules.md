@@ -3,7 +3,7 @@
 `pnpm check` runs these rules over `src/` with the TypeScript compiler API (`bin/check/house-rules.ts`). Each one comes from a mistake that has cost real time: a leaked listener, a bundle that crashed before `<body>` existed, an animation that ran inside the Webflow Designer. A finding names the rule, the file and line, and a fix.
 
 ```
-house-rules  FAIL (1 error)
+FAIL  house-rules (1 error)
   cleanup/state-listener  src/modules/nav.ts:11
     State.on is given an inline function, which can't be removed, so the listener outlives the page
     fix: Name the handler ...
@@ -58,6 +58,6 @@ The rules match syntax, not behaviour, so they can pass code that is wrong. Thes
 - Collections are followed only when filled by an array literal or `push`/`unshift` and drained by `forEach` or `for...of` in `onDestroy`.
 - A cleanup passed through a function call, a callback argument or an object method isn't followed beyond local helpers.
 
-`pnpm check:all` also runs the modules in a real browser (`bin/check/runtime.ts`, per the plan), which catches some of these by behaviour: a count of subscriptions and listeners that grows after `onDestroy` and a remount, an error on load, or a crash when the script runs before `<body>` exists. A green `pnpm check` means no known mistakes, not no mistakes, so run `pnpm check:all` before calling work done.
+`pnpm check:all` also runs the modules in a real browser (`bin/check/runtime.ts`), which catches some of these by behaviour: a count of subscriptions and listeners that grows after `onDestroy` and a remount, an error on load, or a crash when the script runs before `<body>` exists. A green `pnpm check` means no known mistakes, not no mistakes, so run `pnpm check:all` before calling work done.
 
 Things no check decides, such as whether an animation feels right, stay with the skills in `.claude/skills/`.

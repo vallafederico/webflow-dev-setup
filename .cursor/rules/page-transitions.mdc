@@ -1,6 +1,6 @@
 ---
 description: Patterns and rules for the page transition system using Taxi.js and custom module lifecycles. Use when modifying transitions, handling page changes, or implementing cross-page logic.
-globs: src/lib/pages.ts, src/lib/page-transitions.ts, src/modules/_/cycle.ts
+globs: src/lib/pages.ts, src/lib/page-transitions.ts, src/modules/cycle.ts
 alwaysApply: false
 ---
 # Page Transition System Rules
@@ -9,10 +9,7 @@ alwaysApply: false
 The project has `@unseenco/taxi` for client-side navigation, but **it is opt-in and off by default**. Until it is enabled, links are full page loads, so `onPageOut` and `onDestroy` never run (`onPageIn` and `onMount` run once per load). When on, it is tightly integrated with the custom module lifecycle hooks (`onPageIn`, `onPageOut`, `onMount`, `onDestroy`).
 
 ## Enabling Taxi
-1. In `src/lib/pages.ts`, uncomment `export const Pages = new _Pages();`.
-2. In `src/app.ts`, uncomment `import { Pages } from "@lib/pages";` and `pages = Pages;`.
-3. In the Webflow markup, wrap the page in an element with `data-taxi`, and put `data-taxi-view` on the content inside it that changes per page. Taxi throws without `data-taxi-view`.
-4. Set `"taxi": true` in `checks.config.json`, so the browser check also follows a real link.
+The steps are in one place: `docs/component-lifecycle.md`, section "Integration with Taxi.js". Taxi throws without `data-taxi-view` on the page content.
 
 ## Core Components
 - `src/lib/pages.ts`: Extends Taxi's `Core`, manages the sequence of lifecycle runs during transitions.

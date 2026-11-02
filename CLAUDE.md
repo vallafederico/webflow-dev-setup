@@ -15,11 +15,7 @@ This project is a custom development environment for Webflow, using a modular Ja
 2. **Lifecycle Hooks**: Use `onMount`, `onDestroy`, `onPageIn`, `onPageOut` and `onEditor` from `@/modules/_`.
 3. **Interactivity**: Use `onView` for viewport detection and `onTrack` for scroll progress.
 4. **Subscriptions**: Use `Raf` for animation frames and `Resize` for window resizing from `@lib/subs`.
-5. **Page Transitions (opt-in)**: Taxi.js is off. Links are full page loads, so `onDestroy` and `onPageOut` never run. To enable it:
-   - In `src/lib/pages.ts`, uncomment `export const Pages = new _Pages();`.
-   - In `src/app.ts`, uncomment `import { Pages } from "@lib/pages";` and `pages = Pages;`.
-   - In the Webflow markup, wrap the page in an element with `data-taxi` and put `data-taxi-view` on the content inside it that changes per page. Links with `data-taxi-ignore` are skipped.
-   - Set `"taxi": true` in `checks.config.json`, so the browser check also follows a real link.
+5. **Page Transitions (opt-in)**: Taxi.js is off. Links are full page loads, so `onDestroy` and `onPageOut` never run. The steps to enable it are in [`docs/component-lifecycle.md`](docs/component-lifecycle.md#integration-with-taxijs).
 
 ## Environment Detection
 

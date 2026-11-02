@@ -118,6 +118,11 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   let isActive = false;
 
   const scrollUnsubscribe = Scroll.add(({ progress }) => {

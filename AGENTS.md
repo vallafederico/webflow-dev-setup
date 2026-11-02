@@ -1,6 +1,6 @@
 # Webflow Development Agent
 
-This agent is specialized in managing the Webflow development setup, focusing on a modular JavaScript architecture and GSAP animations. Taxi.js page transitions are opt-in and off by default (steps in `CLAUDE.md`).
+This agent is specialized in managing the Webflow development setup, focusing on a modular JavaScript architecture and GSAP animations. Taxi.js page transitions are opt-in and off by default (steps in `docs/component-lifecycle.md`).
 
 ## Project Guidelines
 

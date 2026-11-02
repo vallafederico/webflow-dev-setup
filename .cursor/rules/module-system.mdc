@@ -53,11 +53,16 @@ Import from `@lib/subs`:
 ## Example Pattern
 
 ```typescript
-import { onMount, onDestroy, onPageIn, onPageOut, onView, onTrack } from "@/modules/_";
+import { onMount, onDestroy, onPageIn, onPageOut, onView, onTrack, onEditor } from "@/modules/_";
 import { Raf, Resize } from "@lib/subs";
 import gsap from "@lib/gsap";
 
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   // Setup
   onMount(() => {
     // Initialize component
@@ -92,6 +97,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
   // Animation frame subscription
   const rafUnsubscribe = Raf.add(({ time }) => {
+    if (inEditor) return;
     // Smooth animations
   });
 

@@ -21,20 +21,20 @@ onView(element, {
   autoStart: true,
   callback: ({ isIn, direction }) => {
     element.classList.toggle("is-visible", isIn);
-  }
+  },
 });
 ```
 
 ### `onTrack` (Scroll Progress)
-Maps scroll progress through an element to a range of values.
+Maps scroll progress through an element to a value from 0 to 1. The output is clamped to 0-1, so keep `bounds` at `[0, 1]` and scale in the callback.
 ```typescript
 onTrack(element, {
-  bounds: [0, 100], // Map progress to 0-100
-  top: "bottom",    // Start when bottom of element hits viewport top
-  bottom: "top",    // End when top of element hits viewport bottom
+  bounds: [0, 1], // Map progress to 0-1
+  top: "bottom", // Start when the element's top reaches the viewport bottom
+  bottom: "top", // End when the element's bottom reaches the viewport top
   callback: (value) => {
-    element.style.setProperty("--progress", value.toString());
-  }
+    element.style.setProperty("--progress", (value * 100).toString()); // 0-100
+  },
 });
 ```
 
@@ -45,13 +45,12 @@ Import from `@lib/subs`:
 ### `Raf` (Animation Frame)
 For smooth, frame-based updates. Returns an unsubscribe function.
 ```typescript
-const unsubscribe = Raf.add(({ deltaTime }) => {
-  element.style.transform = `rotate(${deltaTime * 50}deg)`;
+const unsubscribe = Raf.add(({ time, deltaTime }) => {
+  // time: seconds since the ticker started. deltaTime: seconds since the last frame
+  element.style.transform = `rotate(${time * 50}deg)`;
 });
 onDestroy(unsubscribe);
 ```
-
-The callback gets `{ deltaTime, time }`, but the names are swapped relative to what they sound like. GSAP's ticker calls `_Raf.update(deltaTime, time)` in `src/lib/subs.ts` with `(secondsElapsed, millisecondsSinceLastFrame)`. So today `deltaTime` is the seconds elapsed since the ticker started, and `time` is the last frame's length in milliseconds times 0.01 (about 0.17 at 60fps). Use `deltaTime` for a value that keeps growing. Check `src/lib/subs.ts` before relying on either, in case it has been changed.
 
 ### `Resize` (Window Resize)
 For responsive logic. Returns an unsubscribe function.

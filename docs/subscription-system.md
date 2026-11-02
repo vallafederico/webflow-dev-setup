@@ -2,6 +2,8 @@
 
 This document outlines the centralized subscription system providing efficient event management for requestAnimationFrame and window resize events with priority-based ordering.
 
+> Examples omit `onEditor`; `editor/handled` requires it for modules using `Raf.add`, `onView` or GSAP. See [House Rules](./house-rules.md).
+
 ## Overview
 
 The subscription system provides:
@@ -23,12 +25,11 @@ import { Raf } from "@lib/subs";
 
 // Subscribe to animation frame updates
 const unsubscribe = Raf.add(({ deltaTime, time }) => {
-  // deltaTime: seconds since the ticker started
-  // time: the last frame's length in milliseconds, times 0.01
-  // (the names are swapped, see "Raf Data" below)
+  // time: seconds since the ticker started
+  // deltaTime: seconds since the last frame
 
   // Update animations
-  element.style.transform = `translateX(${Math.sin(deltaTime) * 50}px)`;
+  element.style.transform = `translateX(${Math.sin(time) * 50}px)`;
 });
 
 // Clean up subscription
@@ -72,8 +73,9 @@ class _Raf extends Subscribable {
     gsap.ticker.add(this.update.bind(this));
   }
 
-  update(deltaTime: number, time: number) {
-    this.notify({ deltaTime, time: time * 0.01 });
+  // GSAP's ticker calls its listeners with (seconds since it started, milliseconds since the last tick)
+  update(time: number, deltaTime: number) {
+    this.notify({ time, deltaTime: deltaTime / 1000 });
   }
 }
 ```
@@ -230,12 +232,10 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 interface RafData {
-  deltaTime: number; // Seconds elapsed since the GSAP ticker started
-  time: number; // Last frame's length in milliseconds, times 0.01
+  time: number; // Seconds since the GSAP ticker started
+  deltaTime: number; // Seconds since the last frame
 }
 ```
-
-The names are swapped relative to what they sound like. GSAP's ticker calls its listeners with `(secondsElapsed, millisecondsSinceLastFrame)`, and `_Raf.update(deltaTime, time)` in `src/lib/subs.ts` names them in that order. Check that file before relying on either value, in case it has been changed.
 
 ### Resize Data
 
