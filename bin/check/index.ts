@@ -1,0 +1,198 @@
+import path from "node:path";
+import { checks as registry } from "./registry";
+import { NESTED_ENV } from "./tests";
+import {
+  type Check,
+  type CheckContext,
+  type CheckResult,
+  type Finding,
+  ToolFailure,
+} from "./types";
+
+export interface RunOutcome {
+  /** One entry per check, in registry order. */
+  results: CheckResult[];
+  /** Checks whose tool broke, by name, with the reason. */
+  failures: Map<string, string>;
+}
+
+const TOOL_FAILURE_RULE = "tool/failure";
+
+function scrub(text: string, root: string): string {
+  return text.split(`${root}${path.sep}`).join("").split(root).join(".");
+}
+
+function byLocation(a: Finding, b: Finding): number {
+  if (a.file !== b.file) return a.file < b.file ? -1 : 1;
+  if (a.line !== b.line) return a.line - b.line;
+  if (a.rule !== b.rule) return a.rule < b.rule ? -1 : 1;
+  return a.message < b.message ? -1 : a.message > b.message ? 1 : 0;
+}
+
+/** Runs the checks concurrently and returns them in registry order. */
+export async function runChecks(
+  checks: Check[],
+  ctx: CheckContext
+): Promise<RunOutcome> {
+  const failures = new Map<string, string>();
+  const results = await Promise.all(
+    checks.map(async (check): Promise<CheckResult> => {
+      try {
+        const result = await check.run(ctx);
+        return {
+          name: check.name,
+          ok: result.ok,
+          findings: result.findings
+            .map((finding) => ({
+              rule: finding.rule,
+              severity: finding.severity,
+              file: finding.file,
+              line: finding.line,
+              message: scrub(finding.message, ctx.root),
+              fix: scrub(finding.fix, ctx.root),
+            }))
+            .sort(byLocation),
+        };
+      } catch (error) {
+        // A crash is a tool failure too, so it can't read as a pass.
+        const failure =
+          error instanceof ToolFailure
+            ? error
+            : new ToolFailure(
+                `${check.name} crashed: ${(error as Error)?.message ?? String(error)}`
+              );
+        const message = scrub(failure.message, ctx.root);
+        failures.set(check.name, message);
+        return {
+          name: check.name,
+          ok: false,
+          findings: [
+            {
+              rule: TOOL_FAILURE_RULE,
+              severity: "error",
+              file: failure.file,
+              line: 1,
+              message,
+              fix: failure.fix,
+            },
+          ],
+        };
+      }
+    })
+  );
+  return { results, failures };
+}
+
+export function exitCodeFor(outcome: RunOutcome): 0 | 1 | 2 {
+  if (outcome.failures.size > 0) return 2;
+  return outcome.results.every((result) => result.ok) ? 0 : 1;
+}
+
+export function toJson(outcome: RunOutcome): string {
+  return `${JSON.stringify(
+    {
+      ok: exitCodeFor(outcome) === 0,
+      checks: outcome.results.map(({ name, ok, findings }) => ({
+        name,
+        ok,
+        findings,
+      })),
+    },
+    null,
+    2
+  )}\n`;
+}
+
+const HUMAN_LIMIT = 25;
+
+export function toHuman(outcome: RunOutcome): string {
+  const lines: string[] = [];
+  let errors = 0;
+  let warnings = 0;
+  for (const result of outcome.results) {
+    const errorCount = result.findings.filter(
+      (f) => f.severity === "error"
+    ).length;
+    const warningCount = result.findings.length - errorCount;
+    errors += errorCount;
+    warnings += warningCount;
+
+    const broke = outcome.failures.has(result.name);
+    const mark = broke ? "TOOL FAILED" : result.ok ? "ok" : "FAIL";
+    const counts = [
+      errorCount ? `${errorCount} error${errorCount === 1 ? "" : "s"}` : "",
+      warningCount
+        ? `${warningCount} warning${warningCount === 1 ? "" : "s"}`
+        : "",
+    ].filter(Boolean);
+    lines.push(
+      `${mark.padEnd(5)} ${result.name}${counts.length ? ` (${counts.join(", ")})` : ""}`
+    );
+
+    // Errors first, so a long list of warnings can't hide them.
+    const shown = [...result.findings].sort(
+      (a, b) => Number(b.severity === "error") - Number(a.severity === "error")
+    );
+    for (const finding of shown.slice(0, HUMAN_LIMIT)) {
+      const where = finding.file ? `${finding.file}:${finding.line}` : "-";
+      const tag = finding.severity === "warning" ? "warning " : "";
+      lines.push(`  ${tag}${finding.rule}  ${where}`);
+      lines.push(`    ${finding.message}`);
+      lines.push(`    fix: ${finding.fix}`);
+    }
+    if (shown.length > HUMAN_LIMIT) {
+      lines.push(
+        `  ... ${shown.length - HUMAN_LIMIT} more, run pnpm check --json for all`
+      );
+    }
+  }
+
+  const code = exitCodeFor(outcome);
+  lines.push("");
+  lines.push(
+    code === 2
+      ? `A tool failed (${[...outcome.failures.keys()].join(", ")}). This is not a pass.`
+      : code === 1
+        ? `Failed: ${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}`
+        : `Passed${warnings ? ` with ${warnings} warning${warnings === 1 ? "" : "s"}` : ""}`
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+export async function main(argv: string[]): Promise<number> {
+  const known = new Set(["--json", "--all"]);
+  const unknown = argv.filter((arg) => !known.has(arg));
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `Unknown option ${unknown.join(" ")}. Usage: pnpm check [--all] [--json]\n`
+    );
+    return 2;
+  }
+  if (process.env[NESTED_ENV]) {
+    process.stderr.write(
+      "pnpm check was started from inside the check's own test run, which would recurse. Don't run it from a test.\n"
+    );
+    return 2;
+  }
+
+  const all = argv.includes("--all");
+  // Until the bundle, host and runtime checks exist, --all would run only the
+  // fast ones and still read as the full pass agents rely on before finishing.
+  if (all && !registry.some((check) => check.tier === "all")) {
+    process.stderr.write(
+      "pnpm check:all has no tier-all checks registered yet (bundle, host, runtime), so it can't give the full result. Not a pass.\n"
+    );
+    return 2;
+  }
+  const root = path.resolve(import.meta.dir, "..", "..");
+  const selected = registry.filter((check) => all || check.tier === "fast");
+  const outcome = await runChecks(selected, { root, all });
+  process.stdout.write(
+    argv.includes("--json") ? toJson(outcome) : toHuman(outcome)
+  );
+  return exitCodeFor(outcome);
+}
+
+if (import.meta.main) {
+  process.exit(await main(process.argv.slice(2)));
+}

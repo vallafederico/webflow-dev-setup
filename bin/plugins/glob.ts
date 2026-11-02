@@ -28,7 +28,7 @@ export function globEagerPlugin(options: GlobPluginOptions = {}): any {
         // Match `import.meta.glob('./some/pattern/*.js', { eager: true })`
         const globRegex =
           /import\.meta\.glob\(\s*["'`](.*?)["'`](?:,\s*\{.*?eager:\s*true.*?)?\s*\)/g;
-        let match;
+        let match: RegExpExecArray | null;
 
         while ((match = globRegex.exec(sourceCode)) !== null) {
           const [fullMatch, globPattern] = match;
