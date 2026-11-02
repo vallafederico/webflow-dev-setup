@@ -2,6 +2,7 @@ import { plugin } from "bun";
 import { promises as fs } from "fs";
 import path from "path";
 import { Glob } from "bun";
+import type { OnLoadArgs, PluginBuilder } from "bun";
 
 interface GlobPluginOptions {
   extensions?: string[]; // allowed file extensions (e.g. [".js", ".ts"])
@@ -12,8 +13,8 @@ export function globEagerPlugin(options: GlobPluginOptions = {}): any {
 
   return {
     name: "glob-eager-plugin",
-    setup(builder) {
-      builder.onLoad({ filter: /\.(jsx?|tsx?)$/ }, async (args) => {
+    setup(builder: PluginBuilder) {
+      builder.onLoad({ filter: /\.(jsx?|tsx?)$/ }, async (args: OnLoadArgs) => {
         // console.log("Plugin triggered for file:", args.path);
         const sourceCode = await fs.readFile(args.path, "utf8");
         if (!sourceCode.includes("import.meta.glob")) {
@@ -97,18 +98,11 @@ export function globEagerPlugin(options: GlobPluginOptions = {}): any {
             );
           } catch (error) {
             console.error("Error processing glob:", error);
-            return {
-              errors: [
-                {
-                  text: `Failed to process glob pattern: ${error.message}`,
-                  location: {
-                    line: sourceCode.substring(0, match.index).split("\n")
-                      .length,
-                    column: 0,
-                  },
-                },
-              ],
-            };
+            const line = sourceCode.substring(0, match.index).split("\n").length;
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(
+              `Failed to process glob pattern at ${args.path}:${line}: ${reason}`
+            );
           }
         }
 

@@ -81,14 +81,14 @@ export class ObserverManager {
       elementData.lastDirection = direction;
 
       if (isIntersecting) {
-        elementData.callbacks.isIn?.({ entry, direction });
+        elementData.callbacks.isIn?.({ entry, direction, isIn: true });
         elementData.callbacks.callback?.({ entry, direction, isIn: true });
 
         if (elementData.once) {
           this.removeElement(element);
         }
       } else {
-        elementData.callbacks.isOut?.({ entry, direction });
+        elementData.callbacks.isOut?.({ entry, direction, isIn: false });
         elementData.callbacks.callback?.({ entry, direction, isIn: false });
       }
     });
@@ -151,7 +151,7 @@ export class ObserverManager {
 export class Observe {
   element: HTMLElement;
   #config: ObserveConfig;
-  #group: ObserverGroup;
+  #group: ObserverGroup | null = null;
   protected isIn(data: ObserveEventData): void {}
   protected isOut(data: ObserveEventData): void {}
   inView: boolean;

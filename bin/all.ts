@@ -1,6 +1,6 @@
 import type { SpawnOptions } from "bun";
 
-const spawnOptions: SpawnOptions.OptionsObject = {
+const spawnOptions: SpawnOptions.BaseOptions<"inherit", "inherit", "inherit"> = {
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
