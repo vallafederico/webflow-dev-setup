@@ -67,7 +67,7 @@ interface Mutation {
   /** What to run. Default is the whole `--all`. */
   command?: "all" | "runtime" | "host";
   /** Replaces running the command, for cases that signal the run. */
-  custom?: (dir: string, env: Record<string, string>) => Outcome;
+  custom?: (dir: string, env: Record<string, string>) => Promise<Outcome>;
   verify(outcome: Outcome): string | null;
 }
 
@@ -87,10 +87,10 @@ const caught =
     check: string,
     rule: string,
     includes?: string,
-    options: { exit?: number; allow?: string[] } = {}
+    options: { exit?: number; allow?: string[]; alsoFails?: string[] } = {}
   ) =>
   (outcome: Outcome) => {
-    const { exit = 1, allow = [] } = options;
+    const { exit = 1, allow = [], alsoFails = [] } = options;
     if (outcome.code !== exit) return `exit ${outcome.code}, expected ${exit}`;
     const all = findings(outcome, check).filter((f) => f.severity === "error");
     const hit = all.find(
@@ -106,7 +106,13 @@ const caught =
       return `${check} also fired rules that don't belong to this case: ${[...new Set(stray.map((f) => f.rule))].join(", ")}`;
     }
     const others = outcome.checks
-      .filter((c) => c.name !== check && c.name !== "skills" && !c.ok)
+      .filter(
+        (c) =>
+          c.name !== check &&
+          c.name !== "skills" &&
+          !alsoFails.includes(c.name) &&
+          !c.ok
+      )
       .map((c) => c.name);
     if (others.length > 0)
       return `other checks failed too: ${others.join(", ")}`;
@@ -167,7 +173,11 @@ const TAXI_PAGES = (text: string) =>
     "// export const Pages = new _Pages();",
     "export const Pages = new _Pages();"
   );
-const TAXI_ON = (text: string) => text.replace('"taxi": false', '"taxi": true');
+// Taxi and its dependencies add about 3.4kB gzip, so its budgets go up with it.
+const TAXI_ON = (text: string) =>
+  text
+    .replace('"taxi": false', '"taxi": true')
+    .replace(/"(app\.js|pages\/\*\.js)": 63850/g, '"$1": 70000');
 
 export const MUTATIONS: Mutation[] = [
   {
@@ -318,8 +328,9 @@ export default function (element: HTMLElement) {}
     step: "normal load: createCycles() deleted from src/app.ts, so no module starts",
     command: "runtime",
     files: { "src/app.ts": WITHOUT("createCycles();") },
+    // The editor load runs the same check on the same bundle.
     verify: caught("runtime", "runtime/normal-load", "never started", {
-      allow: [],
+      allow: ["runtime/editor-load"],
     }),
   },
   {
@@ -421,8 +432,7 @@ handleEditor((isEditor) => {
     name: "secret-in-dist",
     step: "bundle: a 16-character hook value from .env in dist",
     files: {
-      ".env":
-        'DEPLOY_HOOK="https://example.com/hook/0123456789abcdef"\nUSE_SSL=true\n',
+      ".env": 'DEPLOY_HOOK="https://example.com/hook/0123456789abcdef"\n',
       "public/oops.txt": "hook is https://example.com/hook/0123456789abcdef",
     },
     verify: caught("bundle", "bundle/secret", "DEPLOY_HOOK"),
@@ -462,9 +472,10 @@ handleEditor((isEditor) => {
     files: { "bin/build.ts": BREAK_GLB },
     // Local serving sees the same wrong content type.
     verify: (o) =>
-      caught("host", "host/headers", "/*.glb", { allow: ["host/serving"] })(
-        o
-      ) ??
+      caught("host", "host/headers", "/*.glb", {
+        allow: ["host/serving"],
+        alsoFails: ["tests"], // headers.test.ts compares the same rules
+      })(o) ??
       (findings(o, "host").some(
         (f) =>
           f.rule === "host/serving" && f.message.includes("check-model.glb")
@@ -483,9 +494,10 @@ handleEditor((isEditor) => {
       if (skipped?.severity !== "warning")
         return "no host/serving-skipped warning";
       return (
-        caught("host", "host/headers", "/*.glb", { allow: ["host/serving"] })(
-          o
-        ) ??
+        caught("host", "host/headers", "/*.glb", {
+          allow: ["host/serving"],
+          alsoFails: ["tests"],
+        })(o) ??
         (host.some(
           (f) =>
             f.rule === "host/serving" && f.message.includes("check-model.glb")
@@ -638,7 +650,10 @@ function processesIn(dir: string): number[] {
  * serving, sends SIGTERM, and checks that nothing started by the run is left:
  * no process whose working directory is in that TMPDIR, and no folder in it.
  */
-function signalDuringHost(dir: string, env: Record<string, string>): Outcome {
+async function signalDuringHost(
+  dir: string,
+  env: Record<string, string>
+): Promise<Outcome> {
   const tmp = realpathSync(mkdtempSync(path.join(tmpdir(), "signal-tmp-")));
   const proc = Bun.spawn([BUN, "run", "bin/check/index.ts", "--only", "host"], {
     cwd: dir,
@@ -660,7 +675,7 @@ function signalDuringHost(dir: string, env: Record<string, string>): Outcome {
   while (Date.now() < deadline) {
     before = processesIn(tmp);
     if (before.length >= 2) break;
-    Bun.sleepSync(250);
+    await Bun.sleep(250);
   }
   if (before.length < 2)
     return fail("wrangler dev never started under the run's TMPDIR");
@@ -668,11 +683,11 @@ function signalDuringHost(dir: string, env: Record<string, string>): Outcome {
   proc.kill("SIGTERM");
   const exitDeadline = Date.now() + 20_000;
   while (proc.exitCode === null && Date.now() < exitDeadline)
-    Bun.sleepSync(100);
+    await Bun.sleep(100);
   if (proc.exitCode === null) return fail("the run ignored SIGTERM");
   const code = proc.exitCode;
 
-  Bun.sleepSync(2000);
+  await Bun.sleep(2000);
   const left = processesIn(tmp);
   const folders = existsSync(tmp) ? readdirSync(tmp) : [];
   for (const pid of left) process.kill(pid, 9);
@@ -691,7 +706,7 @@ function signalDuringHost(dir: string, env: Record<string, string>): Outcome {
   };
 }
 
-function runMutation(mutation: Mutation): Outcome {
+async function runMutation(mutation: Mutation): Promise<Outcome> {
   const dir = makeCopy();
   try {
     for (const setup of mutation.setup ?? []) {
@@ -704,7 +719,7 @@ function runMutation(mutation: Mutation): Outcome {
     }
     applyFiles(dir, mutation);
     const env = mutation.env ?? {};
-    if (mutation.custom) return mutation.custom(dir, env);
+    if (mutation.custom) return await mutation.custom(dir, env);
     const command =
       mutation.command === "runtime"
         ? [BUN, "run", "bin/check/index.ts", "--only", "runtime", "--json"]
@@ -737,7 +752,7 @@ if (import.meta.main) {
     matched = "";
     let outcome: Outcome;
     try {
-      outcome = runMutation(mutation);
+      outcome = await runMutation(mutation);
     } catch (error) {
       console.error(
         `${mutation.name}: the harness broke: ${(error as Error).message}`

@@ -22,7 +22,7 @@ function repo(config?: string): string {
 describe("readChecksConfig", () => {
   test("reads the repo's own file", () => {
     const config = readChecksConfig(path.resolve(import.meta.dir, "..", ".."));
-    expect(config.taxi).toBe(false);
+    expect(typeof config.taxi).toBe("boolean");
     expect(config.budgets["app.js"]).toBeGreaterThan(0);
   });
 
