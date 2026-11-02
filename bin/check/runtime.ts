@@ -22,7 +22,6 @@ import {
 } from "./runtime-pages";
 import {
   classifyConsole,
-  type Counts,
   compareCounts,
   type CycleCounts,
   type FixtureApi,
@@ -145,7 +144,11 @@ const stuck = (
 /** Modules in the page that createCycles never started. */
 const notStarted = (page: Page) =>
   page.evaluate(() =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-module]"))
+    Array.from(
+      document.querySelectorAll<HTMLElement & { _moduleInitialized?: boolean }>(
+        "[data-module]"
+      )
+    )
       .filter((element) => !element._moduleInitialized)
       .map((element) => element.dataset.module ?? "")
   );
