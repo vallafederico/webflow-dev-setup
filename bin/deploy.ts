@@ -2,12 +2,8 @@ import { readProjectConfig } from "./project-config";
 
 export async function deploy() {
   const config = readProjectConfig();
-  if (!config) {
-    console.log("No project.config.json. Run `pnpm connect` to choose a host.");
-    return;
-  }
 
-  if (config.host === "cloudflare") {
+  if (config?.host === "cloudflare") {
     console.log(
       "Cloudflare deploys from git. Push to main and Workers Builds updates " +
         config.deployUrl
@@ -31,8 +27,14 @@ export async function deploy() {
   const data = await res.json();
   console.log(data);
 
-  console.log(`\nDeployment URL: ${config.deployUrl}`);
-  console.log("Check the build progress at the URL above");
+  if (config) {
+    console.log(`\nDeployment URL: ${config.deployUrl}`);
+    console.log("Check the build progress at the URL above");
+  } else {
+    console.log(
+      "\nNo project.config.json. Run `pnpm connect vercel` to record the deployment URL."
+    );
+  }
 }
 
 if (import.meta.main) deploy();

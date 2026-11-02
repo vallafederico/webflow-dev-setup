@@ -80,16 +80,27 @@ describe("deploy", () => {
     expect(out).toContain("VERCEL_DEPLOY_HOOK is not set");
   });
 
-  test("no config says to run pnpm connect, even with a hook set", async () => {
-    let called = false;
-    const hook = Bun.serve({ port: 0, fetch: () => ((called = true), Response.json({})) });
+  test("no config still posts to the hook once, and says how to record the URL", async () => {
+    const methods: string[] = [];
+    const hook = Bun.serve({
+      port: 0,
+      fetch: (req) => (methods.push(req.method), Response.json({ job: { id: "j2" } })),
+    });
     try {
       const { code, out } = await run(null, String(hook.url));
       expect(code).toBe(0);
-      expect(out).toContain("pnpm connect");
-      expect(called).toBe(false);
+      expect(methods).toEqual(["POST"]);
+      expect(out).toContain("j2");
+      expect(out).toContain("No project.config.json. Run `pnpm connect vercel`");
+      expect(out).not.toContain("Deployment URL");
     } finally {
       hook.stop(true);
     }
+  });
+
+  test("no config and no hook asks for the hook", async () => {
+    const { code, out } = await run(null);
+    expect(code).toBe(0);
+    expect(out).toContain("VERCEL_DEPLOY_HOOK is not set");
   });
 });
