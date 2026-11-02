@@ -416,14 +416,16 @@ describe("dev index", () => {
     expect(html).not.toContain(".vercel.app");
     expect(html).not.toContain("Vercel");
     expect(html).not.toContain("pnpm connect");
+    expect(html).not.toContain("Connect a host");
+    expect(html).toContain("<dt>Deploy URL</dt>");
   });
 
-  test("without a config there is a local-only loader and a connect notice", async () => {
+  test("without a config there is a connect form and a local-only loader", async () => {
     const html = await index();
+    expect(html).toContain("Connect a host");
     expect(html).toContain("Loader Script (local only)");
     expect(html).toContain("click to copy");
     expect(html).toContain("var DEP = &quot;&quot;;");
-    expect(html).toContain("pnpm connect");
     expect(html).not.toContain("VERCEL_URL");
   });
 
@@ -432,5 +434,6 @@ describe("dev index", () => {
     const html = await index();
     expect(html).not.toContain("Loader Script");
     expect(html).toContain("project.config.json is invalid");
+    expect(html).not.toContain("Connect a host");
   });
 });

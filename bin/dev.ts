@@ -4,6 +4,7 @@ import { generateResponse } from "./generateResponse";
 import { liveReloadCode } from "./live-reload";
 import { CONFIG } from "./config";
 import { copyPublicToDist } from "./copy-public";
+import { handleConnect } from "./connect-panel";
 import { getBunDefine } from "./public-asset-origin";
 import type { BuildConfig } from "bun";
 import { existsSync } from "fs";
@@ -99,7 +100,7 @@ async function rebuildFiles() {
 const server = Bun.serve({
   port: CONFIG.SERVE_PORT,
   tls: ssl,
-  fetch(req) {
+  fetch(req, self) {
     const url = new URL(req.url);
 
     // Handle WebSocket connections
@@ -109,6 +110,13 @@ const server = Bun.serve({
         return new Response("Failed to upgrade", { status: 400 });
       }
       return;
+    }
+
+    if (url.pathname.startsWith("/_connect")) {
+      return handleConnect(req, {
+        ip: self.requestIP(req)?.address,
+        onConnected: rebuildFiles,
+      });
     }
 
     return generateResponse(url.pathname, currentBuildResult?.outputs || []);

@@ -19,6 +19,14 @@ Webflow still serves the pages. The host only serves what the loader asks for: J
 | CORS headers | `dist/_headers`, written by the build | `vercel.json` |
 | `pnpm dep` | Prints "push to main" | Calls `VERCEL_DEPLOY_HOOK` |
 
+## Connecting from the dev page
+
+With no `project.config.json`, the index page of `pnpm dev` (`http://localhost:6545`) shows a **Connect a host** form. Submitting it runs the same code as `pnpm connect`, rebuilds the bundle and shows the project's details, the next steps and the full loader.
+
+- **What it fills in:** the project name from the folder, and `WF_BASE_DOMAIN` if it's set. If Wrangler is logged in, it also fills in your account, your `workers.dev` subdomain and a list of your active domains, through read-only Cloudflare API calls. Wrangler's token stays on the server. Vercel's team suffix is always typed in. If Wrangler isn't logged in, run `pnpm wrangler login` and press **Check again**, or type the values in.
+- **What it won't do:** change anything on your Cloudflare account, or replace an existing config. Use the terminal for `--media`, for switching hosts and for changing a connected project.
+- **Who can use it:** only the page itself, from this machine. A request from another site or another machine gets a 403, even though the dev server listens on every interface.
+
 ## `pnpm connect`
 
 Writes the project's settings, then prints the dashboard steps for that host. Every prompt has a flag, so it can run unattended. With no TTY, a value that has no flag, env var or existing setting is an error that names the flag to pass.

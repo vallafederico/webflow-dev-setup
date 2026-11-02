@@ -259,7 +259,7 @@ interface Account {
   name?: string;
 }
 
-function parseWhoami(
+export function parseWhoami(
   stdout: string
 ): { loggedIn: boolean; accounts: Account[] } | null {
   const start = stdout.indexOf("{");

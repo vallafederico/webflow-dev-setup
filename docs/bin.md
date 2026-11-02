@@ -11,6 +11,7 @@ Understanding how the build system works and its components.
 - Handles live reload
 - Serves bundled files
 - Manages WebSocket connections
+- Shows the connect form and project details on its index page (`bin/connect-panel.ts`)
 
 ### Build System
 

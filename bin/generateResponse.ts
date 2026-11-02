@@ -1,16 +1,14 @@
 import { CONFIG } from "./config";
+import {
+  connectedPanelHtml,
+  connectFormHtml,
+  escapeHtml,
+  PANEL_CSS,
+} from "./connect-panel";
 import { readProjectConfig, type ProjectConfig } from "./project-config";
 
 interface BuildOutput {
   path: string;
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 export function generateLoaderScript(
@@ -373,7 +371,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
           .config-notice .close:hover {
             color: var(--text-color);
           }
-        </style>
+${PANEL_CSS}        </style>
         <script>
           document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.loader-box').forEach(box => {
@@ -400,13 +398,15 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         </script>
       </head>
       <body>
+        ${config ? connectedPanelHtml(config) : configError ? "" : connectFormHtml()}
+
         ${
           loaderScript
             ? `<h2>Loader Script${hasConfig ? "" : " (local only)"}</h2>
         ${
           hasConfig
             ? `<p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code> (desktop; <code>?local=1</code> to force it on touch devices like the iOS Simulator, <code>?local=0</code> to skip it), falls back to deployed. To share a branch preview on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>`
-            : `<p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code to start building. It only loads from this dev server, on <code>.webflow.io</code> on a desktop. Phones and your published domain get no JS or CSS from it. Before you publish, run <code>pnpm connect</code> and replace it with the loader this page shows then.</p>`
+            : `<p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code to start building. It only loads from this dev server, on <code>.webflow.io</code> on a desktop. Phones and your published domain get no JS or CSS from it. Before you publish, connect a host above and replace it with the loader this page shows then.</p>`
         }
         <div class="loader-box">
           <span class="copy-hint">click to copy</span>
@@ -424,12 +424,8 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         ${mapLinks ? `<h3>Source Maps:</h3><ul>${mapLinks}</ul>` : ""}
 
         ${
-          !hasConfig
-            ? `<div class="config-notice"><span class="icon">&#9432;</span><span>${
-                configError
-                  ? escapeHtml(configError)
-                  : "Not connected to a host yet. Run <code>pnpm connect</code> before you publish"
-              }</span><span class="close">&#10005;</span></div>`
+          configError
+            ? `<div class="config-notice"><span class="icon">&#9432;</span><span>${escapeHtml(configError)}</span><span class="close">&#10005;</span></div>`
             : ""
         }
       </body>

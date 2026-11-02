@@ -11,7 +11,7 @@
 ### Changed
 
 - **Deploy URL and preview suffix come from `project.config.json`**, not the `VERCEL_URL` and `PREVIEW_HOST_SUFFIX` env vars. A loader with no suffix accepts no `?js=` preview, where it used to default to `.vercel.app`. Re-paste the loader after moving a site to another host. A build on Vercel with no config still uses the `VERCEL_URL` Vercel sets itself.
-- **The dev index shows a loader before `pnpm connect`**: a local-only one, so you can start in Webflow without picking a host. Paste the full loader over it after connecting.
+- **The dev index connects the project**: with no host it shows a **Connect a host** form, filled in from your Cloudflare login where it can, and a local-only loader so you can start in Webflow straight away. Once connected it shows the project's details, the next steps and the full loader. Paste that over the local one.
 - **pnpm runs everything**. `pnpm i` replaces `bun install`, and `vercel.json` now builds with `pnpm build`, so Vercel uses the Bun version in the lockfile. Bun stays the bundler and dev runtime. Don't run `bun install`: see [Use pnpm, not Bun](./setup.md#use-pnpm-not-bun).
 - **`.claude/skills` is the only place skills are edited**. `pnpm sync:skills` copies them to `.codex` and `.cursor`, and `pnpm check` fails on drift.
 - **Raf timing**: Raf now passes `time` and `deltaTime` in seconds; previously the two were swapped and `time` was mis-scaled.
