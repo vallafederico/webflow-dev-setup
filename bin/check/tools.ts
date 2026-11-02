@@ -45,9 +45,20 @@ export async function exec(
   return { code, stdout, stderr };
 }
 
-/** First lines of tool output, for a failure message. */
-export function excerpt(text: string, lines = 6): string {
-  return text.trim().split("\n").slice(0, lines).join("\n");
+/**
+ * The first meaningful lines of tool output on one line, for a failure message.
+ * Drops blank lines and the rulers and frames some tools draw.
+ */
+export function excerpt(text: string, lines = 4): string {
+  const cleaned = text
+    .split("\n")
+    .map((line) => line.replace(/^[\s>│|]+/, "").trim())
+    .filter((line) => line && !/^[━─\s^]+$/.test(line) && !/━{3,}/.test(line));
+  // Biome marks its actual complaint with a cross, so show only those.
+  const complaints = cleaned.filter((line) => line.startsWith("×"));
+  return (complaints.length > 0 ? complaints : cleaned)
+    .slice(0, lines)
+    .join(" | ");
 }
 
 export function toPosix(file: string): string {
