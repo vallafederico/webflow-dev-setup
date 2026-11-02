@@ -1,4 +1,6 @@
 {
+  "include": ["src", "bin", "api"],
+  "exclude": ["bin/check/fixtures"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "module": "esnext",

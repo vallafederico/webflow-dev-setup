@@ -61,7 +61,7 @@ web_modules/
 
 # TypeScript cache
 
-\*.tsbuildinfo
+*.tsbuildinfo
 
 # Optional npm cache directory
 
@@ -171,3 +171,7 @@ dist
 
 # SSL certificates
 certs/
+
+# Cloudflare
+.generated
+.wrangler

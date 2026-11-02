@@ -3,12 +3,13 @@
   "module": "index.ts",
   "license": "CC-BY-NC-4.0",
   "devDependencies": {
+    "@biomejs/biome": "2.6.4",
     "bun": "^1.1.45",
     "bun-types": "latest",
-    "mkcert": "^3.2.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5.7.3"
+    "mkcert": "^3.2.0",
+    "playwright": "^1.64.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.155.0"
   },
   "scripts": {
     "dev": "bun --watch run bin/dev.ts",
@@ -17,7 +18,15 @@
     "api": "bun --watch run bin/api.ts",
     "all": "bun run bin/all.ts",
     "dep": "bun run bin/deploy.ts",
-    "setup-ssl": "chmod +x scripts/setup-ssl.sh && ./scripts/setup-ssl.sh"
+    "setup-ssl": "chmod +x scripts/setup-ssl.sh && ./scripts/setup-ssl.sh",
+    "connect": "bun run bin/connect.ts",
+    "check": "bun run bin/check/index.ts",
+    "check:all": "bun run bin/check/index.ts --all",
+    "check:runtime": "bun run bin/check/runtime.ts",
+    "check:live": "bun run bin/check/live.ts",
+    "fix": "bun run bin/check/fix.ts",
+    "new:module": "bun run bin/new-module.ts",
+    "sync:skills": "bun run bin/sync-skills.ts"
   },
   "type": "module",
   "packageManager": "pnpm@11.22.0",
