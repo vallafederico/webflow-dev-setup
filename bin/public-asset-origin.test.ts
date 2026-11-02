@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// SERVE_ORIGIN is fixed at import, so a developer's `.env` with USE_SSL=true sets it.
+import { CONFIG } from "./config";
 import {
   getBunDefine,
   getPublicAssetOriginForBuild,
@@ -108,7 +110,7 @@ describe("getPublicAssetOriginForBuild", () => {
   test("dev uses the local dev server", () => {
     process.env.NODE_ENV = "development";
     writeConfig();
-    expect(getPublicAssetOriginForBuild()).toBe("http://localhost:6545");
+    expect(getPublicAssetOriginForBuild()).toBe(CONFIG.SERVE_ORIGIN);
   });
 });
 
@@ -157,7 +159,9 @@ describe("getBunDefine", () => {
       const define = getBunDefine();
       expect(define.__MEDIA_ORIGIN__).toBe('""');
       expect(define.__PREVIEW_HOST_SUFFIX__).toBe('""');
-      expect(define.__PUBLIC_ASSET_ORIGIN__).toBe('"http://localhost:6545"');
+      expect(define.__PUBLIC_ASSET_ORIGIN__).toBe(
+        JSON.stringify(CONFIG.SERVE_ORIGIN)
+      );
       expect(String(error.mock.calls[0][0])).toContain(
         "project.config.json is invalid"
       );

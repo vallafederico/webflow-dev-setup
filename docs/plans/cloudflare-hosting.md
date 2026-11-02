@@ -2,8 +2,8 @@
 
 Branch: `feat/cloudflare-hosting`.
 
-- **Part 1, hosting:** reviewed, ready to implement, starting with "Prove first".
-- **Part 2, agent checks:** reviewed, ready to implement after Part 1. Host-specific checks work on both hosts.
+- **Part 1, hosting:** implemented. Done checks 8 to 11 still need the owner's accounts. `pnpm connect cloudflare` hasn't created a custom domain on a real account yet.
+- **Part 2, agent checks:** implemented. Done checks 8 and 9 still need a real deploy and the owner's GitHub repo. Host-specific checks work on both hosts.
 
 # Part 1: Cloudflare hosting alongside Vercel
 

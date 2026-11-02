@@ -473,7 +473,7 @@ Taxi.js is not active in the template: it is commented out in `src/app.ts` and `
 1. In `src/lib/pages.ts`, uncomment `export const Pages = new _Pages();`.
 2. In `src/app.ts`, uncomment `import { Pages } from "@lib/pages";`, delete `import type { _Pages }`, the `// Set by...` comment and `pages?: _Pages;`, and uncomment `pages = Pages;`. Left in, the old type import and field fail `pnpm check`.
 3. In the Webflow markup, wrap the page in an element with `data-taxi` and put `data-taxi-view` on the content inside it that changes per page. Add `data-taxi-ignore` to links Taxi should leave alone.
-4. Set `"taxi": true` in `checks.config.json`, so the browser check also follows a real link.
+4. In `checks.config.json`, set `"taxi": true`, so the browser check also follows a real link. Raise the `app.js` and `pages/*.js` budgets to `70000` as well: Taxi adds about 3.4 kB gzip, which goes over the defaults.
 
 Once enabled, the system works with Taxi.js for page transitions:
 
