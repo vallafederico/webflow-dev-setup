@@ -18,6 +18,21 @@ import { Raf, Resize } from "@lib/subs";
 import { editorListenerCount } from "@webflow/detect-editor";
 import type { FixtureApi } from "./runtime-rules";
 
+// runPageIn and runPageOut wait on Promise.allSettled, which swallows a hook
+// that throws. Say so on the console, where the browser run reads it.
+const allSettled = Promise.allSettled.bind(
+  Promise
+) as typeof Promise.allSettled;
+Promise.allSettled = (async (values: Iterable<unknown>) => {
+  const results = await allSettled(values);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error(`a page hook rejected: ${String(result.reason)}`);
+    }
+  }
+  return results;
+}) as typeof Promise.allSettled;
+
 declare global {
   interface Window {
     __wdsCheck: FixtureApi;
