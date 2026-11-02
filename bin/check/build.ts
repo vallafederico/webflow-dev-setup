@@ -69,8 +69,12 @@ export const build: Check = {
     };
 
     if (result.code !== 0) {
+      // The build prints warnings first, so lead with what looks like the error.
+      const errors = output
+        .split("\n")
+        .filter((line) => /error|❌/i.test(line));
       fail(
-        `pnpm build exited ${result.code}: ${excerpt(output, 3)}`,
+        `pnpm build exited ${result.code}: ${excerpt(errors.length > 0 ? errors.join("\n") : output, 3)}`,
         "Run pnpm build and fix the error it prints",
         blameFile(output)
       );

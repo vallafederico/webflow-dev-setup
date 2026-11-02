@@ -194,7 +194,7 @@ export default function (element: HTMLElement) {}
     command: "runtime",
     files: {
       "checks.config.json": (text) =>
-        text.replace('"hookTimeoutMs": 10000', '"hookTimeoutMs": 1500'),
+        text.replace('"hookTimeoutMs": 10000', '"hookTimeoutMs": 4000'),
       "src/modules/hang.ts": TEMPLATE_MODULE(
         `  onPageIn(async () => {
     const tween = gsap.to(element, { opacity: 0, duration: 5 });

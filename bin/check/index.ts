@@ -184,11 +184,11 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   const all = argv.includes("--all");
-  // Until the bundle, host and runtime checks exist, --all would run only the
-  // fast ones and still read as the full pass agents rely on before finishing.
+  // Without any tier "all" check, --all would run only the fast ones and
+  // still read as the full pass agents rely on before finishing.
   if (all && !registry.some((check) => check.tier === "all")) {
     process.stderr.write(
-      "pnpm check:all has no tier-all checks registered yet (bundle, host, runtime), so it can't give the full result. Not a pass.\n"
+      "pnpm check:all has no tier-all checks registered (build, bundle, host, runtime), so it can't give the full result. Not a pass.\n"
     );
     return 2;
   }
