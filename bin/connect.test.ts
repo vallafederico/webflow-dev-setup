@@ -292,7 +292,7 @@ describe("cloudflare", () => {
     );
     expect(text).toContain("`pnpm build`");
     expect(text).toContain("non-production branches");
-    expect(text).toContain("`bun dev`");
+    expect(text).toContain("`pnpm dev`");
   });
 
   test("reads the base domain from WF_BASE_DOMAIN", async () => {

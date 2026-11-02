@@ -2,6 +2,8 @@
 
 This document outlines the centralized subscription system providing efficient event management for requestAnimationFrame and window resize events with priority-based ordering.
 
+> Examples omit `onEditor`; `editor/handled` requires it for modules using `Raf.add`, `onView` or GSAP. See [House Rules](./house-rules.md).
+
 ## Overview
 
 The subscription system provides:
@@ -23,8 +25,8 @@ import { Raf } from "@lib/subs";
 
 // Subscribe to animation frame updates
 const unsubscribe = Raf.add(({ deltaTime, time }) => {
-  // deltaTime: time since last frame in seconds
-  // time: total time since start (scaled down by 0.01)
+  // time: seconds since the ticker started
+  // deltaTime: seconds since the last frame
 
   // Update animations
   element.style.transform = `translateX(${Math.sin(time) * 50}px)`;
@@ -71,8 +73,9 @@ class _Raf extends Subscribable {
     gsap.ticker.add(this.update.bind(this));
   }
 
-  update(deltaTime: number, time: number) {
-    this.notify({ deltaTime, time: time * 0.01 });
+  // GSAP's ticker calls its listeners with (seconds since it started, milliseconds since the last tick)
+  update(time: number, deltaTime: number) {
+    this.notify({ time, deltaTime: deltaTime / 1000 });
   }
 }
 ```
@@ -229,8 +232,8 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 interface RafData {
-  deltaTime: number; // Time since last frame in seconds
-  time: number; // Total time since start (scaled by 0.01)
+  time: number; // Seconds since the GSAP ticker started
+  deltaTime: number; // Seconds since the last frame
 }
 ```
 

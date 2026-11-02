@@ -1,0 +1,37 @@
+name: Check
+
+# Runs the same `pnpm check:all` an agent runs before saying work is done, so a
+# pass doesn't rely on anyone's word. Copied with the template, so it makes no
+# assumption about the project: it works with or without project.config.json.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # No version: pnpm/action-setup reads the pinned one from packageManager.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm i --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm check:all

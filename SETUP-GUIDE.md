@@ -2,7 +2,7 @@
 
 Changes made to `bin/generateResponse.ts` to replace the old per-file `onerror` handler pattern with a unified loader script.
 
-> The code below is the original refactor. `bin/generateResponse.ts` is the source of truth; it has since added the phone localhost skip ([Mobile JS Loading Fix](./docs/mobile-js-loading-fix.md)) and branch previews ([Branch Previews](./docs/branch-previews.md)).
+> The code below is the original refactor. `bin/generateResponse.ts` is the source of truth; it has since added the phone localhost skip ([Mobile JS Loading Fix](./docs/mobile-js-loading-fix.md)), branch previews ([Branch Previews](./docs/branch-previews.md)), and it now reads the deploy URL and preview suffix from `project.config.json` instead of an env var ([Hosting](./docs/hosting.md)). `generateLoaderScript` takes a sixth argument, `previewHostSuffix`, that the snippet below doesn't have.
 
 ---
 
@@ -164,8 +164,8 @@ const cssFiles = outputs
   .filter((o) => o.path.endsWith(".css"))
   .map((o) => o.path.split("/dist/")[1]);
 
-const loaderScript = hasVercel
-  ? generateLoaderScript(appJs, pageJs, cssFiles, vercelUrl, localUrl)
+const loaderScript = hasConfig
+  ? generateLoaderScript(appJs, pageJs, cssFiles, deployUrl, localUrl)
   : null;
 ```
 

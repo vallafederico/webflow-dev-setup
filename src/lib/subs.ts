@@ -30,6 +30,14 @@ class Subscribable {
   }
 }
 
+/** What `Raf.add` callbacks receive. */
+export interface RafData {
+  /** Seconds since the GSAP ticker started. */
+  time: number;
+  /** Seconds since the last frame. */
+  deltaTime: number;
+}
+
 /** Raf */
 class _Raf extends Subscribable {
   constructor() {
@@ -37,8 +45,9 @@ class _Raf extends Subscribable {
     gsap.ticker.add(this.update.bind(this));
   }
 
-  update(deltaTime: number, time: number) {
-    this.notify({ deltaTime, time: time * 0.01 });
+  // GSAP's ticker calls its listeners with (seconds since it started, milliseconds since the last tick).
+  update(time: number, deltaTime: number) {
+    this.notify({ time, deltaTime: deltaTime / 1000 } satisfies RafData);
   }
 }
 

@@ -7,46 +7,62 @@ description: Manage and implement client-side page transitions using Taxi.js. Us
 
 This skill covers how to work with the Taxi.js transition system and how it triggers module lifecycles.
 
-## How it Works
+## Taxi is opt-in
+
+Taxi is off in the template: it is commented out in `src/app.ts` and `src/lib/pages.ts`. Links are full page loads, so `onDestroy` and `onPageOut` never run. `onPageIn` and `onMount` run once per load.
+
+The steps to enable it (uncommenting in `src/lib/pages.ts` and `src/app.ts`, the `data-taxi` and `data-taxi-view` markup, and `"taxi": true` in `checks.config.json`) are in one place: [Integration with Taxi.js](../../../docs/component-lifecycle.md#integration-with-taxijs). Taxi throws without `data-taxi-view` on the page content.
+
+## How it Works (once enabled)
 1. **Trigger**: User clicks a valid link.
-2. **Leave**: Taxi calls `onLeave` -> `transitionOut` -> `onPageOut` hooks run -> modules destroyed.
+2. **Leave**: Taxi calls `onLeave` -> `transitionOut` -> `onPageOut` hooks run -> modules destroyed (`onDestroy`).
 3. **Load**: New content is fetched and swapped.
 4. **Enter**: Taxi calls `onEnter` -> `transitionIn` -> modules initialized -> `onPageIn` hooks run -> `onMount` hooks run.
 
 ## Implementing Transitions in Modules
 
-Use the `onPageIn` and `onPageOut` hooks inside your modules to create seamless transitions.
+Use the `onPageIn` and `onPageOut` hooks inside your modules to create seamless transitions. They are safe to write before Taxi is on: `onPageIn` runs on load, and `onPageOut` waits until it is enabled.
 
 ```typescript
-import { onPageIn, onPageOut } from "@/modules/_";
+import { onEditor, onPageIn, onPageOut } from "@/modules/_";
 import gsap from "@lib/gsap";
 
-export default function(element: HTMLElement) {
+export default function (element: HTMLElement) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor;
+  });
+
   // Entrance animation
   onPageIn(async () => {
-    await gsap.from(element, { 
-      opacity: 0, 
-      y: 30, 
-      duration: 1, 
-      ease: "power3.out" 
+    if (inEditor) return;
+    await gsap.from(element, {
+      opacity: 0,
+      y: 30,
+      duration: 1,
+      ease: "power3.out",
     });
   });
 
   // Exit animation
-  onPageOut(async () => {
-    await gsap.to(element, { 
-      opacity: 0, 
-      duration: 0.5 
-    });
-  }, { element }); // { element } ensures it only runs if visible
+  onPageOut(
+    async () => {
+      await gsap.to(element, {
+        opacity: 0,
+        duration: 0.5,
+      });
+    },
+    { element }
+  ); // { element } ensures it only runs if visible
 }
 ```
 
 ## Global Configuration
-Transitions are managed in `src/lib/pages.ts`. You can ignore specific links by adding `data-taxi-ignore` to the HTML element in Webflow.
+Transitions are managed in `src/lib/pages.ts` and `src/lib/page-transitions.ts`. You can ignore specific links by adding `data-taxi-ignore` to the link in Webflow.
 
 ## Troubleshooting Transitions
+- **Nothing happens on navigation**: Taxi is off until the steps above are done.
 - **Animations not waiting**: Ensure your lifecycle hooks return a `Promise` (use `async` and `await`).
 - **Module not mounting on new page**: Check if `data-module` is present in the new page's HTML and that the filename matches exactly.
 - **Scroll issues**: The system automatically scrolls to top in `transitionOut`.
-- **Memory leaks**: Ensure `onDestroy` handles cleanup; it is automatically triggered by the transition system.
+- **Memory leaks**: Ensure `onDestroy` handles cleanup; it is triggered by the transition system once Taxi is on (see [House Rules](../../../docs/house-rules.md)).

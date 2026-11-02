@@ -652,7 +652,7 @@ async function planCloudflare(
       "In the Cloudflare dashboard open Workers & Pages, create an application and connect this repository (Workers Builds).",
       "Set the build command to `pnpm build`. Leave the deploy command as the default.",
       "Under Branch control, enable builds for non-production branches, so each branch gets a preview URL.",
-      "Run `bun dev` and paste the loader it prints into the site's custom code in Webflow.",
+      "Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow.",
     ],
   };
 }
@@ -688,7 +688,7 @@ async function planVercel(
       `Commit and push ${PROJECT_CONFIG_FILE}. vercel.json is left as it is.`,
       `In Vercel, import this repository as a project named "${name}", so production is ${config.deployUrl}.`,
       "Turn off Deployment Protection for preview deployments, or the loader cannot fetch them from Webflow.",
-      "Run `bun dev` and paste the loader it prints into the site's custom code in Webflow.",
+      "Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow.",
     ],
   };
 }
