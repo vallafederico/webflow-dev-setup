@@ -13,7 +13,8 @@ track()
 */
 
 import { Observe, ObserveConfig, Track } from "@/modules/_";
-import { Resize } from "@/lib/subs";
+import { Resize } from "@lib/subs";
+import { handleEditor, releaseEditor } from "@webflow/detect-editor";
 
 /** -- <stores> */
 const destroy: Array<() => void> = [];
@@ -38,6 +39,18 @@ export function runMount() {
   mount.forEach((fn) => fn());
   mount.length = 0;
   //   console.log("mount -> []", mount);
+}
+
+/**
+ * Runs `fn` with the current editor state now and whenever it changes, and
+ * releases the listener on destroy. Use it instead of calling `handleEditor`
+ * directly in a module, which would leave the listener behind.
+ */
+export function onEditor(fn: (isEditor: boolean) => void) {
+  // Register the release first: if `fn` throws on its first call, the listener
+  // is already added and must still be released.
+  onDestroy(() => releaseEditor(fn));
+  handleEditor(fn);
 }
 
 /** -- <animation> */

@@ -1,5 +1,3 @@
-import { Raf } from "@lib/subs";
-
 /** ------------ Damp/Lerp **/
 
 /**
@@ -14,7 +12,7 @@ export function dampPow(
   current: number,
   target: number,
   smoothing: number,
-  dt: number = Raf.deltaTime
+  dt: number
 ): number {
   return lerp(current, target, 1 - Math.pow(smoothing, dt));
 }
@@ -31,7 +29,7 @@ export function damp(
   current: number,
   target: number,
   lambda: number,
-  dt: number = Raf.deltaTime
+  dt: number
 ): number {
   // console.log(Raf.deltaTime, current, target, lambda)
   return lerp(current, target, 1 - Math.exp(-lambda * dt));

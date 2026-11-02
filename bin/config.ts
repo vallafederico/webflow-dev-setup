@@ -16,6 +16,9 @@ const pages = getPageFiles().map((page) => {
   return `src/pages/${page}`;
 });
 
+// WF_DEV_PORT lets the tests run while `bun dev` holds the default port.
+const SERVE_PORT = Number(process.env.WF_DEV_PORT) || 6545;
+
 export const CONFIG = {
   bun: {
     entrypoints: [...(appFile ? [appFile] : []), ...pages],
@@ -30,9 +33,9 @@ export const CONFIG = {
     entrypoints: cssEntrypoints,
   },
   // Server Info for websocket
-  SERVE_PORT: 6545,
+  SERVE_PORT,
   SERVE_ORIGIN:
     process.env.USE_SSL === "true"
-      ? `https://localhost:6545`
-      : `http://localhost:6545`,
+      ? `https://localhost:${SERVE_PORT}`
+      : `http://localhost:${SERVE_PORT}`,
 };

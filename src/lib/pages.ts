@@ -24,8 +24,8 @@ const PAGES_CONFIG = {
 export interface TransitionParams {
   from?: Element | HTMLElement;
   to?: Element | HTMLElement;
-  trigger: HTMLAnchorElement;
-  wrapper: HTMLElement | any;
+  trigger: string | false | HTMLElement;
+  wrapper?: HTMLElement;
   destination?: string;
 }
 

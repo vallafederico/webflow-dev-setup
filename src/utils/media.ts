@@ -1,3 +1,10 @@
+declare global {
+  // Legacy Opera property, only read for the mobile UA sniff below
+  interface Window {
+    opera?: string;
+  }
+}
+
 /**
  * Check if user prefers reduced motion
  * @returns {boolean} True if user prefers reduced motion
@@ -30,6 +37,6 @@ export const isMobile = (): boolean => {
       )
     )
       check = true;
-  })(navigator.userAgent || navigator.vendor || window.opera);
+  })(navigator.userAgent || navigator.vendor || window.opera || "");
   return check;
 };

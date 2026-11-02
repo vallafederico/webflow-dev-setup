@@ -1,5 +1,5 @@
 import { writeFileSync, readdirSync, statSync } from "fs";
-import { join } from "path";
+import { join, relative } from "path";
 import { existsSync } from "fs";
 
 interface BuildOutput {
@@ -17,6 +17,7 @@ interface DistFile {
 
 interface BuildManifest {
   timestamp: string;
+  commit: string | null;
   buildDuration: number;
   javascript: {
     files: BuildOutput[];
@@ -98,6 +99,11 @@ export function generateBuildManifest(
   buildDuration: number
 ): BuildManifest {
   const distPath = join(process.cwd(), "dist");
+  const relativeToDist = (output: any): BuildOutput => ({
+    path: relative(distPath, output.path),
+    size: output.size,
+    type: output.type,
+  });
   const allFiles = getDistFiles(distPath);
   const { sourceMaps, otherFiles } = separateSourceMaps(allFiles);
   const { txtFiles, otherFiles: remainingFiles } = separateTxtFiles(otherFiles);
@@ -108,20 +114,17 @@ export function generateBuildManifest(
 
   return {
     timestamp: new Date().toISOString(),
+    // Lets `pnpm check:live` tell which commit a deployment was built from.
+    commit:
+      process.env.WORKERS_CI_COMMIT_SHA ||
+      process.env.VERCEL_GIT_COMMIT_SHA ||
+      null,
     buildDuration,
     javascript: {
-      files: Array.from(jsResult.outputs.values()).map((output: any) => ({
-        path: output.path,
-        size: output.size,
-        type: output.type,
-      })),
+      files: Array.from(jsResult.outputs.values()).map(relativeToDist),
     },
     css: {
-      files: Array.from(cssResult.outputs.values()).map((output: any) => ({
-        path: output.path,
-        size: output.size,
-        type: output.type,
-      })),
+      files: Array.from(cssResult.outputs.values()).map(relativeToDist),
     },
     public: {
       files: publicFiles,

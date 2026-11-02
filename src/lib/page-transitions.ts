@@ -12,7 +12,7 @@ export class Transition extends BaseTransition {
     trigger: string | false | HTMLElement;
     done: Function;
   }) {
-    await App.pages.transitionOut({ from, trigger });
+    await App.pages?.transitionOut({ from, trigger });
     done();
   }
 
@@ -25,7 +25,7 @@ export class Transition extends BaseTransition {
     trigger: string | false | HTMLElement;
     done: Function;
   }) {
-    await App.pages.transitionIn({ to, trigger });
+    await App.pages?.transitionIn({ to, trigger });
     done();
   }
 }

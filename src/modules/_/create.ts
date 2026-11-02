@@ -3,6 +3,11 @@ const modules = import.meta.glob("../*.{ts,js}", { eager: true });
 
 // Extend HTMLElement interface to include our custom property
 declare global {
+  // Provided at build time by bin/plugins/glob.ts
+  interface ImportMeta {
+    glob(pattern: string, options: { eager: true }): Record<string, unknown>;
+  }
+
   interface HTMLElement {
     _moduleInitialized?: boolean;
   }

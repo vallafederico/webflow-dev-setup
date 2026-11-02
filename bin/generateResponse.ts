@@ -1,5 +1,5 @@
 import { CONFIG } from "./config";
-import { getValidatedUrlSafe } from "../src/utils/url-validator";
+import { readProjectConfig, type ProjectConfig } from "./project-config";
 
 interface BuildOutput {
   path: string;
@@ -13,7 +13,7 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function generateLoaderScript(
+export function generateLoaderScript(
   appJs: string | null,
   pageJs: string[],
   cssFiles: string[],
@@ -62,7 +62,8 @@ function generateLoaderScript(
     }
     try{ var u=new URL(v.indexOf("://")<0 ? "https://"+v : v); }catch(e){ u=null; }
     // Anyone can craft a staging link, so only accept our preview hosts.
-    if(!u || u.protocol!=="https:" || !u.hostname.endsWith(PREVIEW_HOST)){
+    // endsWith("") is true for every host, so an empty suffix must refuse.
+    if(!PREVIEW_HOST || !u || u.protocol!=="https:" || !u.hostname.endsWith(PREVIEW_HOST)){
       console.warn("[loader] ignoring "+key+" preview, not an https *"+PREVIEW_HOST+" URL:", v);
       return null;
     }
@@ -156,16 +157,25 @@ ${
 <\/script>`;
 }
 
+function readConfigSafe(): { config: ProjectConfig | null; error: string | null } {
+  try {
+    return { config: readProjectConfig(), error: null };
+  } catch (error) {
+    return {
+      config: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function generateIndexHtml(outputs: BuildOutput[]) {
-  const vercelUrl = getValidatedUrlSafe("VERCEL_URL") || "{NO VERCEL URL}";
-  const hasVercel = vercelUrl !== "{NO VERCEL URL}";
+  const { config, error: configError } = readConfigSafe();
+  const hasConfig = config !== null;
+  const deployUrl = config?.deployUrl ?? "";
+  const previewHostSuffix = config?.previewHostSuffix ?? "";
 
   const protocol = process.env.USE_SSL === "true" ? "https" : "http";
   const localUrl = `${protocol}://localhost:${CONFIG.SERVE_PORT}`;
-
-  const suffixEnv = process.env.PREVIEW_HOST_SUFFIX?.trim();
-  const previewHostSuffix =
-    suffixEnv && /^[a-z0-9.-]+$/i.test(suffixEnv) ? suffixEnv : ".vercel.app";
 
   const allJs = outputs
     .filter((o) => o.path.endsWith(".js") && !o.path.endsWith(".js.map"))
@@ -178,12 +188,12 @@ function generateIndexHtml(outputs: BuildOutput[]) {
     .filter((o) => o.path.endsWith(".css"))
     .map((o) => o.path.split("/dist/")[1]);
 
-  const loaderScript = hasVercel
+  const loaderScript = hasConfig
     ? generateLoaderScript(
         appJs,
         pageJs,
         cssFiles,
-        vercelUrl,
+        deployUrl,
         localUrl,
         previewHostSuffix
       )
@@ -202,8 +212,8 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         <a href="/${relativePath}" target="_blank" class="main-link">${relativePath}</a>${badge}
         <code class="tag">&lt;script defer src="${localUrl}/${relativePath}"&gt;&lt;/script&gt;</code>
         ${
-          hasVercel
-            ? `<code class="tag">&lt;script defer src="<a href="${vercelUrl}/${relativePath}" target="_blank">${vercelUrl}/${relativePath}</a>"&gt;&lt;/script&gt;</code>`
+          hasConfig
+            ? `<code class="tag">&lt;script defer src="<a href="${deployUrl}/${relativePath}" target="_blank">${deployUrl}/${relativePath}</a>"&gt;&lt;/script&gt;</code>`
             : ""
         }
       </li>`;
@@ -216,8 +226,8 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         <a href="/${relativePath}" target="_blank" class="main-link">${relativePath}</a>
         <code class="tag">&lt;link rel="stylesheet" href="${localUrl}/${relativePath}"&gt;</code>
         ${
-          hasVercel
-            ? `<code class="tag">&lt;link rel="stylesheet" href="<a href="${vercelUrl}/${relativePath}" target="_blank">${vercelUrl}/${relativePath}</a>"&gt;</code>`
+          hasConfig
+            ? `<code class="tag">&lt;link rel="stylesheet" href="<a href="${deployUrl}/${relativePath}" target="_blank">${deployUrl}/${relativePath}</a>"&gt;</code>`
             : ""
         }
       </li>`
@@ -318,7 +328,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
             color: var(--code-color);
             opacity: 0.6;
           }
-          .vercel-notice {
+          .config-notice {
             position: fixed;
             bottom: 20px;
             right: 20px;
@@ -334,18 +344,18 @@ function generateIndexHtml(outputs: BuildOutput[]) {
             align-items: center;
             gap: 10px;
           }
-          .vercel-notice .icon {
+          .config-notice .icon {
             color: var(--link-color);
             font-size: 1.2em;
           }
-          .vercel-notice .close {
+          .config-notice .close {
             margin-left: 10px;
             cursor: pointer;
             color: var(--code-color);
             font-size: 1.2em;
             padding: 0 5px;
           }
-          .vercel-notice .close:hover {
+          .config-notice .close:hover {
             color: var(--text-color);
           }
         </style>
@@ -364,10 +374,10 @@ function generateIndexHtml(outputs: BuildOutput[]) {
               });
             });
 
-            const closeButton = document.querySelector('.vercel-notice .close');
+            const closeButton = document.querySelector('.config-notice .close');
             if (closeButton) {
               closeButton.addEventListener('click', () => {
-                const notice = document.querySelector('.vercel-notice');
+                const notice = document.querySelector('.config-notice');
                 if (notice) notice.style.display = 'none';
               });
             }
@@ -378,7 +388,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         ${
           loaderScript
             ? `<h2>Loader Script</h2>
-        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code> (desktop; <code>?local=1</code> to force it on touch devices like the iOS Simulator, <code>?local=0</code> to skip it), falls back to deployed. To share a Vercel branch on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>
+        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code> (desktop; <code>?local=1</code> to force it on touch devices like the iOS Simulator, <code>?local=0</code> to skip it), falls back to deployed. To share a branch preview on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>
         <div class="loader-box">
           <span class="copy-hint">click to copy</span>
           <pre>${escapeHtml(loaderScript)}</pre>
@@ -395,8 +405,12 @@ function generateIndexHtml(outputs: BuildOutput[]) {
         ${mapLinks ? `<h3>Source Maps:</h3><ul>${mapLinks}</ul>` : ""}
 
         ${
-          !hasVercel
-            ? '<div class="vercel-notice"><span class="icon">&#9432;</span><span>Add VERCEL_URL to your .env file for full CI/CD functionality</span><span class="close">&#10005;</span></div>'
+          !hasConfig
+            ? `<div class="config-notice"><span class="icon">&#9432;</span><span>${
+                configError
+                  ? escapeHtml(configError)
+                  : "Run <code>pnpm connect</code> to choose a host and get the loader script"
+              }</span><span class="close">&#10005;</span></div>`
             : ""
         }
       </body>

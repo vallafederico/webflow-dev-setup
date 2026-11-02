@@ -4,6 +4,7 @@ import { tick } from "@/utils/tick";
 import { publicAssetUrl, PUBLIC_ASSET_ORIGIN } from "@/utils/public-asset";
 import { createCycles, runMount, runPageIn } from "./modules/_";
 // import { Pages } from "@lib/pages";
+import type { _Pages } from "@lib/pages";
 
 export { PUBLIC_ASSET_ORIGIN, publicAssetUrl };
 
@@ -21,6 +22,8 @@ export { PUBLIC_ASSET_ORIGIN, publicAssetUrl };
 
 class _App {
   private scroll = Scroll;
+  // Set by `pages = Pages` once Taxi is enabled; type-only import keeps the cycle out of the bundle.
+  pages?: _Pages;
   // pages = Pages;
 
   constructor() {

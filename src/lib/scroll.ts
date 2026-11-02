@@ -54,6 +54,11 @@ class _Scroll extends Lenis {
     if (this.#subscribers.length < 1) return;
     this.#subscribers.forEach((f) => f.fn(data));
   }
+
+  /** Live subscriber count, for leak checks. */
+  count() {
+    return this.#subscribers.length;
+  }
 }
 
 export const Scroll = new _Scroll();

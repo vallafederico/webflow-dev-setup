@@ -1,3 +1,11 @@
+type WebflowModule = { destroy: () => void; ready: () => void };
+
+declare global {
+  interface Window {
+    Webflow?: WebflowModule[];
+  }
+}
+
 export function resetWebflow() {
   const webflow = window.Webflow || [];
   if (webflow.length > 0) {
