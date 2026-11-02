@@ -12,8 +12,8 @@ import { Raf } from "@lib/subs";
 
 // Subscribe to animation frame updates
 const rafUnsubscribe = Raf.add(({ deltaTime, time }) => {
-  // deltaTime: time since last frame in seconds
-  // time: total time since start (scaled down by 0.01)
+  // time: seconds since the ticker started
+  // deltaTime: seconds since the last frame
 
   // Update animations
   element.style.transform = `translateX(${Math.sin(time) * 50}px)`;
@@ -69,8 +69,14 @@ Resize.add(updateBackgroundLayout, 1);
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   // Raf subscription for smooth animations
   const rafUnsubscribe = Raf.add(({ deltaTime, time }) => {
+    if (inEditor) return;
     // Smooth rotation
     element.style.transform = `rotate(${time * 50}deg)`;
 
@@ -107,12 +113,18 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   let isActive = false;
   let lastUpdate = 0;
   const updateInterval = 16; // ~60fps
 
   // Conditional Raf subscription
   const rafUnsubscribe = Raf.add(({ time }) => {
+    if (inEditor) return;
     // Only update when active and at appropriate intervals
     if (!isActive || time - lastUpdate < updateInterval) return;
 
@@ -140,6 +152,11 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   const subscriptions: (() => void)[] = [];
 
   // Multiple Raf subscriptions with different priorities
@@ -165,21 +182,19 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ## Frame-Rate Independent Animations
 
+`Raf` callbacks get `{ time, deltaTime }`: `time` is seconds since the ticker started, and `deltaTime` is seconds since the last frame. Both give the same speed on every device when used as below.
+
 ```typescript
-// Good - Frame-rate independent
-Raf.add(({ deltaTime }) => {
-  // Use deltaTime for consistent animation speed
-  const currentOpacity = parseFloat(element.style.opacity) || 0;
-  element.style.opacity = Math.min(
-    1,
-    currentOpacity + deltaTime * 2
-  ).toString();
+// Derive a value from elapsed time
+Raf.add(({ time }) => {
+  element.style.opacity = (Math.sin(time) * 0.5 + 0.5).toString();
 });
 
-// Bad - Frame-rate dependent
-Raf.add(({ time }) => {
-  // This will run at different speeds on different devices
-  element.style.opacity = Math.sin(time) * 0.5 + 0.5;
+// Or advance by the frame step
+let x = 0;
+Raf.add(({ deltaTime }) => {
+  x += deltaTime * 10;
+  element.style.transform = `translateX(${x}px)`;
 });
 ```
 
@@ -203,6 +218,11 @@ Resize.add(({ width, height }) => {
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   let rafUnsubscribe: (() => void) | null = null;
   let resizeUnsubscribe: (() => void) | null = null;
 
@@ -224,6 +244,11 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 export default function (element: HTMLElement, dataset: DOMStringMap) {
+  let inEditor = false;
+  onEditor((isEditor) => {
+    inEditor = isEditor; // skip or reset effects in the Designer
+  });
+
   let isActive = false;
 
   // Only animate when in view
@@ -235,6 +260,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
   // Conditional animation
   const rafUnsubscribe = Raf.add(({ time }) => {
+    if (inEditor) return;
     if (!isActive) return;
 
     element.style.transform = `translateY(${Math.sin(time) * 10}px)`;
@@ -251,8 +277,8 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 ```typescript
 // Raf Data
 interface RafData {
-  deltaTime: number; // Time since last frame in seconds
-  time: number; // Total time since start (scaled by 0.01)
+  time: number; // Seconds since the ticker started
+  deltaTime: number; // Seconds since the last frame
 }
 
 // Resize Data
