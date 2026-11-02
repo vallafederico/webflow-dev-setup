@@ -6,24 +6,30 @@ export default function (element: HTMLElement) {
   };
   element.addEventListener("click", onClick);
 
-  // Removes itself after the first call.
-  window.addEventListener("load", () => {}, { once: true });
+  // A bare call is on window, and so is self.
+  const onLoad = () => {};
+  addEventListener("load", onLoad);
+  const onScroll = () => {};
+  window.addEventListener("scroll", onScroll);
 
   let count = 0;
-  const interval = setInterval(() => {
+  const interval = window.setInterval(() => {
     element.dataset.count = String(count++);
   }, 1000);
 
   const observer = new IntersectionObserver(() => {});
   observer.observe(element);
 
-  const controller = new AbortController();
-  element.addEventListener("focus", () => {}, { signal: controller.signal });
+  // Entries kept in a list are all released by the loop in onDestroy.
+  const observers: MutationObserver[] = [];
+  observers.push(new MutationObserver(() => {}));
 
   onDestroy(() => {
     element.removeEventListener("click", onClick);
+    removeEventListener("load", onLoad);
+    self.removeEventListener("scroll", onScroll);
     clearInterval(interval);
     observer.disconnect();
-    controller.abort();
+    observers.forEach((entry) => entry.disconnect());
   });
 }

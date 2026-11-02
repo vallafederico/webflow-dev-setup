@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   analyzeRoot,
   analyzeSource,
   applyEdits,
+  LIMITS,
   moduleNameProblem,
   RULES,
 } from "./house-rules";
@@ -289,5 +290,393 @@ describe("module names", () => {
     expect(moduleNameProblem("carousel_slider")).toContain("kebab-case");
     expect(moduleNameProblem("2up")).toContain("kebab-case");
     expect(moduleNameProblem("module")).toContain("generic");
+  });
+});
+
+describe("every file in a failing fixture is flagged, every one in a passing fixture is clean", () => {
+  const files = (dir: string): string[] =>
+    (readdirSync(dir, { recursive: true }) as string[])
+      .filter((entry) => statSync(path.join(dir, entry)).isFile())
+      .map((entry) => entry.split(path.sep).join("/"));
+
+  for (const rule of RULES) {
+    test(`${rule}: no failing file slips through unflagged`, () => {
+      const dir = path.join(FIXTURES, rule, "fail");
+      const flagged = new Set(analyzeRoot(dir).findings.map((f) => f.file));
+      for (const file of files(dir)) expect(flagged.has(file)).toBe(true);
+    });
+  }
+});
+
+/** One variant per case, so a miss names the variant. */
+describe("syntax variants", () => {
+  const rulesOf = (file: string, source: string, prefix = "") =>
+    analyzeSource(file, source)
+      .findings.map((f) => f.rule)
+      .filter((rule) => rule.startsWith(prefix));
+  const mod = (
+    body: string,
+    header = 'import { onDestroy, onEditor } from "@/modules/_";\nimport State from "@lib/hey";\nimport { Raf } from "@lib/subs";\nimport gsap, { SplitText } from "@lib/gsap";'
+  ) =>
+    `${header}\nexport default function (element: HTMLElement) {\n${body}\n}\n`;
+
+  const failing: Array<[string, string, string, string]> = [
+    // [name, file, source, rule]
+    [
+      "browser: process['env'].X",
+      "src/a.ts",
+      "export const a = process['env'].X;",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: process['env']['X']",
+      "src/a.ts",
+      "export const a = process['env']['X'];",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: (process as any).env.X",
+      "src/a.ts",
+      "export const a = (process as any).env.X;",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: globalThis.process.env.X",
+      "src/a.ts",
+      "export const a = globalThis.process.env.X;",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: window['process'].env.X",
+      "src/a.ts",
+      "export const a = window['process'].env.X;",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: const { env } = process",
+      "src/a.ts",
+      "const { env } = process;\nexport { env };",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: const p = process",
+      "src/a.ts",
+      "const p = process;\nexport { p };",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: const env = process.env",
+      "src/a.ts",
+      "export const env = process.env;",
+      "browser/no-process-env",
+    ],
+    [
+      "browser: process.env[name]",
+      "src/a.ts",
+      "export const f = (n: string) => process.env[n];",
+      "browser/no-process-env",
+    ],
+    [
+      "raw: requestAnimationFrame",
+      "src/modules/a.ts",
+      mod("  requestAnimationFrame(() => {});"),
+      "subs/no-raw",
+    ],
+    [
+      "raw: self.requestAnimationFrame",
+      "src/modules/a.ts",
+      mod("  self.requestAnimationFrame(() => {});"),
+      "subs/no-raw",
+    ],
+    [
+      "raw: window['requestAnimationFrame']",
+      "src/modules/a.ts",
+      mod("  window['requestAnimationFrame'](() => {});"),
+      "subs/no-raw",
+    ],
+    [
+      "raw: const raf = window.requestAnimationFrame",
+      "src/modules/a.ts",
+      mod("  const raf = window.requestAnimationFrame;\n  raf(() => {});"),
+      "subs/no-raw",
+    ],
+    [
+      "raw: const { requestAnimationFrame } = window",
+      "src/modules/a.ts",
+      mod(
+        "  const { requestAnimationFrame } = window;\n  requestAnimationFrame(() => {});"
+      ),
+      "subs/no-raw",
+    ],
+    [
+      "raw: window.onresize =",
+      "src/modules/a.ts",
+      mod("  window.onresize = () => {};"),
+      "subs/no-raw",
+    ],
+    [
+      "raw: addEventListener('resize')",
+      "src/pages/a.js",
+      "addEventListener('resize', () => {});",
+      "subs/no-raw",
+    ],
+    [
+      "listener: bare addEventListener",
+      "src/modules/a.ts",
+      mod("  const f = () => {};\n  addEventListener('x', f);"),
+      "cleanup/listener",
+    ],
+    [
+      "listener: removed under another event",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  element.addEventListener('click', f);\n  onDestroy(() => element.removeEventListener('mouseenter', f));"
+      ),
+      "cleanup/listener",
+    ],
+    [
+      "listener: removed from another target",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  element.addEventListener('click', f);\n  onDestroy(() => document.removeEventListener('click', f));"
+      ),
+      "cleanup/listener",
+    ],
+    [
+      "listener: bare add, removed from element",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  addEventListener('click', f);\n  onDestroy(() => element.removeEventListener('click', f));"
+      ),
+      "cleanup/listener",
+    ],
+    [
+      "listener: { once: true } is not an exemption",
+      "src/modules/a.ts",
+      mod("  element.addEventListener('click', () => {}, { once: true });"),
+      "cleanup/listener",
+    ],
+    [
+      "listener: signal is not an exemption",
+      "src/modules/a.ts",
+      mod(
+        "  const c = new AbortController();\n  const f = () => {};\n  element.addEventListener('click', f, { signal: c.signal });"
+      ),
+      "cleanup/listener",
+    ],
+    [
+      "listener: self.setInterval",
+      "src/modules/a.ts",
+      mod("  self.setInterval(() => {}, 1);"),
+      "cleanup/listener",
+    ],
+    [
+      "listener: new window.IntersectionObserver",
+      "src/modules/a.ts",
+      mod("  new window.IntersectionObserver(() => {});"),
+      "cleanup/listener",
+    ],
+    [
+      "state: off with another event",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  State.on('A', f);\n  onDestroy(() => State.off('B', f));"
+      ),
+      "cleanup/state-listener",
+    ],
+    [
+      "state: off with another handler",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  const g = () => {};\n  State.on('A', f);\n  onDestroy(() => State.off('A', g));"
+      ),
+      "cleanup/state-listener",
+    ],
+    [
+      "subscription: array literal never drained",
+      "src/modules/a.ts",
+      mod(
+        "  onEditor(() => {});\n  const all = [Raf.add(() => {})];\n  onDestroy(() => { all.length = 0; });"
+      ),
+      "cleanup/subscription",
+    ],
+    [
+      "subscription: push, drained by another list",
+      "src/modules/a.ts",
+      mod(
+        "  onEditor(() => {});\n  const a: Array<() => void> = [];\n  const b: Array<() => void> = [];\n  a.push(Raf.add(() => {}));\n  onDestroy(() => b.forEach((s) => s()));"
+      ),
+      "cleanup/subscription",
+    ],
+    [
+      "editor: SplitText.create",
+      "src/modules/a.ts",
+      mod("  SplitText.create(element);"),
+      "editor/handled",
+    ],
+    [
+      "editor: ScrollTrigger-free gsap.timeline chain",
+      "src/modules/a.ts",
+      mod("  gsap.timeline().to(element, {});"),
+      "editor/handled",
+    ],
+    [
+      "gsap: export * from gsap",
+      "src/a.ts",
+      "export * from 'gsap';",
+      "imports/gsap",
+    ],
+    [
+      "gsap: import()",
+      "src/a.ts",
+      "export const l = () => import('gsap');",
+      "imports/gsap",
+    ],
+    [
+      "gsap: require()",
+      "src/a.ts",
+      "export const l = require('gsap/ScrollTrigger');",
+      "imports/gsap",
+    ],
+    [
+      "subs: export from",
+      "src/a.ts",
+      "export { Raf } from '@/lib/subs';",
+      "imports/subs",
+    ],
+    [
+      "lifecycle: export from",
+      "src/utils/a.ts",
+      "export { onMount } from '../modules/_';",
+      "imports/lifecycle",
+    ],
+    [
+      "js module without default export",
+      "src/modules/a.js",
+      "export const a = 1;",
+      "module/default-export",
+    ],
+    [
+      "js module with three parameters",
+      "src/modules/a.js",
+      "export default function (a, b, c) {}",
+      "module/signature",
+    ],
+    [
+      "js module with a bad name",
+      "src/modules/Bad_Name.js",
+      "export default function () {}",
+      "module/filename",
+    ],
+    [
+      "js module leaking a listener",
+      "src/modules/a.js",
+      "export default function (e) { e.addEventListener('x', () => {}); }",
+      "cleanup/listener",
+    ],
+  ];
+  for (const [name, file, source, rule] of failing) {
+    test(`flags ${name}`, () => {
+      expect(rulesOf(file, source)).toContain(rule);
+    });
+  }
+
+  const passing: Array<[string, string, string]> = [
+    [
+      "process.env.NODE_ENV through a cast",
+      "src/a.ts",
+      "export const a = (process as any).env.NODE_ENV;",
+    ],
+    [
+      "import type from gsap",
+      "src/a.ts",
+      "import type { gsap } from 'gsap';\nexport type G = typeof gsap;",
+    ],
+    ["export type from gsap", "src/a.ts", "export type { Tween } from 'gsap';"],
+    [
+      "a gsap import inside src/lib/gsap.ts",
+      "src/lib/gsap.ts",
+      "import gsap from 'gsap';\nexport default gsap;\nexport const l = () => import('gsap');",
+    ],
+    [
+      "bare add and bare remove",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  addEventListener('x', f);\n  onDestroy(() => removeEventListener('x', f));"
+      ),
+    ],
+    [
+      "add on self, remove on window",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  self.addEventListener('x', f);\n  onDestroy(() => window.removeEventListener('x', f));"
+      ),
+    ],
+    [
+      "a state on and off with the same event and handler",
+      "src/modules/a.ts",
+      mod(
+        "  const f = () => {};\n  State.on('A', f);\n  onDestroy(() => State.off('A', f));"
+      ),
+    ],
+    [
+      "subscriptions pushed and released with any loop variable",
+      "src/modules/a.ts",
+      mod(
+        "  onEditor(() => {});\n  const subs: Array<() => void> = [];\n  subs.push(Raf.add(() => {}), Raf.add(() => {}));\n  onDestroy(() => {\n    subs.forEach((unsubscribe) => unsubscribe());\n  });"
+      ),
+    ],
+    [
+      "a list literal released with forEach",
+      "src/modules/a.ts",
+      mod(
+        "  onEditor(() => {});\n  const subs = [Raf.add(() => {}), Raf.add(() => {})];\n  onDestroy(() => subs.forEach((u) => u()));"
+      ),
+    ],
+    [
+      "a list released with for...of",
+      "src/modules/a.ts",
+      mod(
+        "  onEditor(() => {});\n  const subs = [Raf.add(() => {})];\n  onDestroy(() => {\n    for (const s of subs) s();\n  });"
+      ),
+    ],
+    [
+      "observers released with forEach",
+      "src/modules/a.ts",
+      mod(
+        "  const observers: MutationObserver[] = [];\n  observers.push(new MutationObserver(() => {}));\n  onDestroy(() => observers.forEach((o) => o.disconnect()));"
+      ),
+    ],
+    [
+      "a reassigned subscription released by name",
+      "src/modules/a.ts",
+      mod(
+        "  onEditor(() => {});\n  let s = Raf.add(() => {});\n  s = Raf.add(() => {});\n  onDestroy(s);"
+      ),
+    ],
+    [
+      "intervals released with forEach(clearInterval)",
+      "src/modules/a.ts",
+      mod(
+        "  const ids: number[] = [];\n  ids.push(window.setInterval(() => {}, 1));\n  onDestroy(() => ids.forEach(clearInterval));"
+      ),
+    ],
+    [
+      "a js module that cleans up",
+      "src/modules/a.js",
+      "import { onDestroy } from '@/modules/_';\nexport default function (e) { const f = () => {}; e.addEventListener('x', f); onDestroy(() => e.removeEventListener('x', f)); }",
+    ],
+  ];
+  for (const [name, file, source] of passing) {
+    test(`accepts ${name}`, () => {
+      expect(rulesOf(file, source)).toEqual([]);
+    });
+  }
+});
+
+describe("limits", () => {
+  test("are listed for the docs", () => {
+    expect(LIMITS.length).toBeGreaterThan(5);
+    for (const limit of LIMITS) expect(limit.endsWith(".")).toBe(true);
   });
 });

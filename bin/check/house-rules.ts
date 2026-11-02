@@ -2,7 +2,13 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { toPosix } from "./tools";
-import { type Check, type Finding, type Severity, toResult } from "./types";
+import {
+  type Check,
+  type Finding,
+  type Severity,
+  ToolFailure,
+  toResult,
+} from "./types";
 
 /** A text replacement that fixes a finding without changing behaviour. */
 export interface Edit {
@@ -66,6 +72,22 @@ const GENERIC_NAMES = new Set([
 
 const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
+/**
+ * What the rules can't see, because they match syntax and not behaviour. The
+ * browser run is the check for these. Used by docs/house-rules.md.
+ */
+export const LIMITS: string[] = [
+  "Conditional cleanup counts as cleanup: `if (false) stop()` and `if (x) onDestroy(stop)` both pass.",
+  "An onDestroy inside a function that is never called still counts.",
+  "Names are matched as written, so a local variable that shadows an import (`const Raf = ...`) or an alias of one (`const r = Raf; r.add(...)`) is not followed.",
+  "A no-op `onEditor(() => {})` satisfies editor/handled. The rule checks that the helper is called, not what the callback does.",
+  "Listener removal is matched on target, event and handler. A mismatch in the capture flag or other options is not seen.",
+  "A helper that subscribes on the module's behalf (`function track() { Raf.add(...) }` called from the module) is only checked inside the helper's own file.",
+  "A subscription stored in a variable that is later reassigned (`let s = Raf.add(a); s = Raf.add(b); onDestroy(s)`) passes, though the first one leaks.",
+  "Collections are followed only when filled by an array literal or push/unshift and drained by forEach or for...of in onDestroy.",
+  "A cleanup that is passed through a function call, a callback argument or an object method is not followed beyond local helpers.",
+];
+
 /** Why a module name is refused, or null when it is fine. */
 export function moduleNameProblem(name: string): string | null {
   if (!KEBAB_CASE.test(name)) {
@@ -126,12 +148,18 @@ interface ImportBinding {
 // Scope
 // ---------------------------------------------------------------------------
 
-const isModuleFile = (file: string) => /^src\/modules\/[^/]+\.ts$/.test(file);
+const isModuleFile = (file: string) =>
+  /^src\/modules\/[^/]+\.(ts|js)$/.test(file);
 const isPageFile = (file: string) => file.startsWith("src/pages/");
 
 function listSourceFiles(root: string): string[] {
   const dir = path.join(root, "src");
-  if (!existsSync(dir)) return [];
+  if (!existsSync(dir)) {
+    throw new ToolFailure(
+      "src/ does not exist, so there is no code for the house rules to check",
+      { fix: "Run the check from the project root, which holds src/" }
+    );
+  }
   return (readdirSync(dir, { recursive: true }) as string[])
     .map(toPosix)
     .filter(
@@ -170,18 +198,108 @@ const isFunctionLike = (node: ts.Node): node is FunctionLike =>
 const isInlineFunction = (node: ts.Node) =>
   ts.isArrowFunction(node) || ts.isFunctionExpression(node);
 
+const GLOBALS = new Set(["window", "self", "globalThis"]);
+
+/** Strips parentheses, casts, `!` and `await` from an expression. */
 function unwrap(node: ts.Expression): ts.Expression {
   let current = node;
   while (
     ts.isParenthesizedExpression(current) ||
     ts.isNonNullExpression(current) ||
     ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
     ts.isAwaitExpression(current)
   ) {
     current = current.expression;
   }
   return current;
 }
+
+/** The outermost wrapper around `node`, such as `(process as any)`. */
+function outerExpression(node: ts.Node): ts.Node {
+  let current = node;
+  while (
+    current.parent &&
+    (ts.isParenthesizedExpression(current.parent) ||
+      ts.isNonNullExpression(current.parent) ||
+      ts.isAsExpression(current.parent) ||
+      ts.isTypeAssertionExpression(current.parent) ||
+      ts.isSatisfiesExpression(current.parent)) &&
+    current.parent.expression === current
+  ) {
+    current = current.parent;
+  }
+  return current;
+}
+
+type MemberAccess = ts.PropertyAccessExpression | ts.ElementAccessExpression;
+
+function isMemberOf(parent: ts.Node, node: ts.Node): parent is MemberAccess {
+  return (
+    (ts.isPropertyAccessExpression(parent) ||
+      ts.isElementAccessExpression(parent)) &&
+    parent.expression === node
+  );
+}
+
+/** `b` in `a.b` and in `a["b"]`. Null for anything computed. */
+function memberName(node: ts.Node): string | null {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node)) {
+    const key = unwrap(node.argumentExpression);
+    return ts.isStringLiteralLike(key) ? key.text : null;
+  }
+  return null;
+}
+
+/** `window`, `self`, `globalThis`, or one reached through another of them. */
+function isGlobalObject(node: ts.Expression): boolean {
+  const target = unwrap(node);
+  if (ts.isIdentifier(target)) return GLOBALS.has(target.text);
+  return (
+    (ts.isPropertyAccessExpression(target) ||
+      ts.isElementAccessExpression(target)) &&
+    GLOBALS.has(memberName(target) ?? "") &&
+    isGlobalObject(target.expression)
+  );
+}
+
+/**
+ * `fn`, `window.fn`, `self["fn"]` and `(globalThis as any).fn` all name the
+ * same global function. Returns `fn`, or null for any other receiver.
+ */
+function globalCallName(callee: ts.Expression): string | null {
+  const target = unwrap(callee);
+  if (ts.isIdentifier(target)) return target.text;
+  if (
+    (ts.isPropertyAccessExpression(target) ||
+      ts.isElementAccessExpression(target)) &&
+    isGlobalObject(target.expression)
+  ) {
+    return memberName(target);
+  }
+  return null;
+}
+
+/** `fn` for `fn()` and `x.fn()` whatever `x` is. */
+function memberOrBareName(callee: ts.Expression): string | null {
+  const target = unwrap(callee);
+  return ts.isIdentifier(target) ? target.text : memberName(target);
+}
+
+/** Does a binding pattern bind the property `name`? */
+function bindsName(pattern: ts.BindingName, name: string): boolean {
+  return (
+    ts.isObjectBindingPattern(pattern) &&
+    pattern.elements.some(
+      (element) => (element.propertyName ?? element.name).getText() === name
+    )
+  );
+}
+
+const isGsapPackage = (specifier: string) =>
+  specifier === "gsap" || specifier.startsWith("gsap/");
 
 const compact = (text: string) => text.replace(/\s+/g, "");
 
@@ -203,6 +321,7 @@ const GSAP_PASSIVE = new Set([
 
 type Stored =
   | { kind: "stored"; name: string }
+  | { kind: "collection"; name: string }
   | { kind: "destroy" }
   | { kind: "lost" };
 
@@ -213,6 +332,7 @@ class FileAnalyzer {
   readonly findings: Finding[] = [];
   readonly edits: Edit[] = [];
   private readonly functions = new Map<string, FunctionLike[]>();
+  private destroyRegions: ts.Node[] = [];
   private destroyCalls: ts.CallExpression[] = [];
   private destroyRefs = new Set<string>();
   private validIgnores = new Map<number, Set<string>>();
@@ -329,10 +449,9 @@ class FileAnalyzer {
       const comment = /^\s*\/\/\s*house-ignore\b(.*)$/.exec(raw);
       if (!comment) return;
       const rest = comment[1] ?? "";
-      const valid = /^\s+([\w/-]+(?:[\s,]+[\w/-]+)*?)\s*:\s*(\S.*)$/.exec(rest);
+      const valid = /^\s+([\w/-]+)\s*:\s*(\S.*)$/.exec(rest);
       if (valid) {
-        const rules = (valid[1] ?? "").split(/[\s,]+/).filter(Boolean);
-        this.validIgnores.set(index + 1, new Set(rules));
+        this.validIgnores.set(index + 1, new Set([valid[1] as string]));
       } else {
         this.pendingReasonLines.push(index + 1);
       }
@@ -383,7 +502,8 @@ class FileAnalyzer {
     const lib = (m: string) => m === "src/lib/gsap";
     return (
       this.isNamedImport(node, lib, "default") ||
-      this.isNamedImport(node, lib, "ScrollTrigger")
+      this.isNamedImport(node, lib, "ScrollTrigger") ||
+      this.isNamedImport(node, lib, "SplitText")
     );
   }
 
@@ -438,6 +558,7 @@ class FileAnalyzer {
       }
     }
 
+    this.destroyRegions = regions;
     this.destroyCalls = regions.flatMap((region) => this.calls(region));
   }
 
@@ -451,37 +572,114 @@ class FileAnalyzer {
     );
   }
 
-  /** Is `receiver.method(handler?)` called in a destroy callback? */
-  private methodInDestroy(
-    receiver: string,
-    method: string,
-    handler?: string
-  ): boolean {
-    return this.destroyCalls.some((call) => {
-      const callee = unwrap(call.expression);
-      if (!ts.isPropertyAccessExpression(callee)) return false;
-      if (callee.name.text !== method) return false;
-      if (compact(callee.expression.getText(this.sf)) !== receiver) {
-        return false;
-      }
-      return (
-        handler === undefined ||
-        call.arguments.some((arg) => compact(arg.getText(this.sf)) === handler)
-      );
-    });
+  /** Is `call` a call of `receiver.method(...)`? */
+  private isMethod(call: ts.CallExpression, receiver: string, method: string) {
+    const callee = unwrap(call.expression);
+    return (
+      isMemberOf(callee, (callee as MemberAccess).expression) &&
+      memberName(callee) === method &&
+      compact((callee as MemberAccess).expression.getText(this.sf)) === receiver
+    );
   }
 
-  /** Where the value of this expression ends up: `x` in `const x = value`. */
+  /**
+   * Does a destroy callback make a call that `match` accepts and whose first
+   * arguments read as `args`?
+   */
+  private callInDestroy(
+    match: (call: ts.CallExpression) => boolean,
+    args: string[]
+  ): boolean {
+    return this.destroyCalls.some(
+      (call) =>
+        match(call) &&
+        args.every(
+          (text, index) =>
+            !!call.arguments[index] &&
+            compact(call.arguments[index]?.getText(this.sf) ?? "") === text
+        )
+    );
+  }
+
+  /**
+   * Does a destroy callback go through every entry of the array `name`, as in
+   * `name.forEach((entry) => entry())` or `for (const entry of name) ...`?
+   */
+  private drainedInDestroy(
+    name: string,
+    how: "call" | "disconnect" | "clear"
+  ): boolean {
+    const uses = (body: ts.Node, entry: string) =>
+      this.calls(body).some((call) => {
+        const callee = unwrap(call.expression);
+        if (how === "call") {
+          return ts.isIdentifier(callee) && callee.text === entry;
+        }
+        if (how === "disconnect") {
+          return (
+            isMemberOf(callee, (callee as MemberAccess).expression) &&
+            memberName(callee) === "disconnect" &&
+            compact((callee as MemberAccess).expression.getText(this.sf)) ===
+              entry
+          );
+        }
+        return (
+          globalCallName(callee) === "clearInterval" &&
+          call.arguments.some((arg) => compact(arg.getText(this.sf)) === entry)
+        );
+      });
+
+    let drained = false;
+    const visit = (node: ts.Node) => {
+      if (drained) return;
+      if (ts.isCallExpression(node)) {
+        const callee = unwrap(node.expression);
+        const arg = node.arguments[0] && unwrap(node.arguments[0]);
+        if (
+          arg &&
+          isMemberOf(callee, (callee as MemberAccess).expression) &&
+          memberName(callee) === "forEach" &&
+          compact((callee as MemberAccess).expression.getText(this.sf)) === name
+        ) {
+          if (
+            how === "clear" &&
+            globalCallName(arg) === "clearInterval" &&
+            ts.isIdentifier(arg)
+          ) {
+            drained = true;
+          } else if (isInlineFunction(arg)) {
+            const first = (arg as FunctionLike).parameters[0];
+            if (first && ts.isIdentifier(first.name)) {
+              drained = uses(arg, first.name.text);
+            }
+          }
+        }
+      }
+      if (
+        ts.isForOfStatement(node) &&
+        compact(node.expression.getText(this.sf)) === name
+      ) {
+        const init = node.initializer;
+        const entry = ts.isVariableDeclarationList(init)
+          ? init.declarations[0]?.name
+          : undefined;
+        if (entry && ts.isIdentifier(entry)) {
+          drained = uses(node.statement, entry.text);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    for (const region of this.destroyRegions) visit(region);
+    return drained;
+  }
+
+  /**
+   * Where the value of this expression ends up: `x` in `const x = value`, the
+   * array `list` in `list.push(value)` or `const list = [value]`, or straight
+   * into onDestroy.
+   */
   private storedAs(node: ts.Node): Stored {
-    let current: ts.Node = node;
-    while (
-      current.parent &&
-      (ts.isParenthesizedExpression(current.parent) ||
-        ts.isNonNullExpression(current.parent) ||
-        ts.isAsExpression(current.parent))
-    ) {
-      current = current.parent;
-    }
+    const current = outerExpression(node);
     const parent = current.parent;
     if (
       parent &&
@@ -502,10 +700,27 @@ class FileAnalyzer {
     if (
       parent &&
       ts.isCallExpression(parent) &&
-      parent.arguments.includes(current as ts.Expression) &&
-      this.isLifecycle(parent.expression, "onDestroy")
+      parent.arguments.includes(current as ts.Expression)
     ) {
-      return { kind: "destroy" };
+      if (this.isLifecycle(parent.expression, "onDestroy")) {
+        return { kind: "destroy" };
+      }
+      const callee = unwrap(parent.expression);
+      if (
+        isMemberOf(callee, (callee as MemberAccess).expression) &&
+        ["push", "unshift"].includes(memberName(callee) ?? "")
+      ) {
+        return {
+          kind: "collection",
+          name: compact((callee as MemberAccess).expression.getText(this.sf)),
+        };
+      }
+    }
+    if (parent && ts.isArrayLiteralExpression(parent)) {
+      const array = this.storedAs(parent);
+      if (array.kind === "stored") {
+        return { kind: "collection", name: array.name };
+      }
     }
     return { kind: "lost" };
   }
@@ -548,12 +763,17 @@ class FileAnalyzer {
   }
 
   private checkImports() {
+    const exempt = this.file === "src/lib/gsap.ts";
     for (const statement of this.sf.statements) {
-      if (!ts.isImportDeclaration(statement)) continue;
-      if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      const isImport = ts.isImportDeclaration(statement);
+      const isReExport =
+        ts.isExportDeclaration(statement) && !!statement.moduleSpecifier;
+      if (!isImport && !isReExport) continue;
       const literal = statement.moduleSpecifier;
+      if (!literal || !ts.isStringLiteral(literal)) continue;
       const specifier = literal.text;
       const resolved = resolveSpecifier(this.file, specifier);
+      const names = this.importedNames(statement);
 
       if (resolved === "src/lib/subs" && specifier !== SUBS_SPECIFIER) {
         this.fixableImport(
@@ -566,11 +786,13 @@ class FileAnalyzer {
       }
 
       if (resolved && isLifecycleModule(resolved)) {
-        const names = this.importedNames(statement);
         const importsHook = names.some((name) => HOOK_NAME.test(name));
         const insideLifecycle = this.file.startsWith("src/modules/_/");
-        const misspelled = specifier !== LIFECYCLE_SPECIFIER;
-        if (importsHook && misspelled && !insideLifecycle) {
+        if (
+          importsHook &&
+          specifier !== LIFECYCLE_SPECIFIER &&
+          !insideLifecycle
+        ) {
           this.fixableImport(
             "imports/lifecycle",
             statement,
@@ -581,20 +803,65 @@ class FileAnalyzer {
         }
       }
 
-      const isGsapPackage =
-        specifier === "gsap" || specifier.startsWith("gsap/");
-      if (isGsapPackage && this.file !== "src/lib/gsap.ts") {
-        this.reportAt(
-          "imports/gsap",
-          statement,
-          `"${specifier}" is imported directly, so plugins registered in src/lib/gsap.ts may be missing`,
-          'Import gsap and its plugins from "@lib/gsap" instead'
-        );
+      if (!exempt && isGsapPackage(specifier) && !this.isTypeOnly(statement)) {
+        this.reportGsap(statement, specifier);
+      }
+    }
+
+    // import("gsap") and require("gsap") load it just as directly.
+    if (!exempt) {
+      for (const call of this.calls(this.sf)) {
+        const callee = call.expression;
+        const loads =
+          callee.kind === ts.SyntaxKind.ImportKeyword ||
+          (ts.isIdentifier(callee) && callee.text === "require");
+        const first = call.arguments[0];
+        if (
+          loads &&
+          first &&
+          ts.isStringLiteralLike(first) &&
+          isGsapPackage(first.text)
+        ) {
+          this.reportGsap(call, first.text);
+        }
       }
     }
   }
 
-  private importedNames(statement: ts.ImportDeclaration): string[] {
+  private reportGsap(node: ts.Node, specifier: string) {
+    this.reportAt(
+      "imports/gsap",
+      node,
+      `"${specifier}" is loaded directly, so plugins registered in src/lib/gsap.ts may be missing`,
+      'Import gsap and its plugins from "@lib/gsap" instead'
+    );
+  }
+
+  /** `import type` and `export type` are erased, so they load nothing. */
+  private isTypeOnly(statement: ts.ImportDeclaration | ts.ExportDeclaration) {
+    if (ts.isExportDeclaration(statement)) return statement.isTypeOnly;
+    const clause = statement.importClause;
+    if (!clause) return false;
+    if (clause.isTypeOnly) return true;
+    const bindings = clause.namedBindings;
+    return (
+      !clause.name &&
+      !!bindings &&
+      ts.isNamedImports(bindings) &&
+      bindings.elements.length > 0 &&
+      bindings.elements.every((element) => element.isTypeOnly)
+    );
+  }
+
+  private importedNames(
+    statement: ts.ImportDeclaration | ts.ExportDeclaration
+  ): string[] {
+    if (ts.isExportDeclaration(statement)) {
+      const clause = statement.exportClause;
+      return clause && ts.isNamedExports(clause)
+        ? clause.elements.map((e) => (e.propertyName ?? e.name).text)
+        : [];
+    }
     const bindings = statement.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) return [];
     return bindings.elements.map(
@@ -604,7 +871,7 @@ class FileAnalyzer {
 
   private fixableImport(
     rule: Rule,
-    statement: ts.ImportDeclaration,
+    statement: ts.Node,
     literal: ts.StringLiteral,
     replacement: string,
     message: string
@@ -626,29 +893,43 @@ class FileAnalyzer {
   }
 
   private checkProcessEnv() {
+    const env = (node: ts.Node) =>
+      this.reportAt(
+        "browser/no-process-env",
+        node,
+        "process.env does not exist in the browser, and the build only replaces NODE_ENV",
+        "Read the value at build time (a define in bin/build.ts or the project config) or pass it in a data attribute"
+      );
+    const alias = (node: ts.Node) =>
+      this.reportAt(
+        "browser/no-process-env",
+        node,
+        "process is copied or destructured, which hides its env reads, and process.env does not exist in the browser",
+        "Use process.env.NODE_ENV directly, or read the value at build time or from a data attribute"
+      );
+
     const visit = (node: ts.Node) => {
-      if (
-        ts.isPropertyAccessExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === "process" &&
-        node.name.text === "env"
-      ) {
-        const parent = node.parent;
-        const allowed =
-          (ts.isPropertyAccessExpression(parent) &&
-            parent.expression === node &&
-            parent.name.text === "NODE_ENV") ||
-          (ts.isElementAccessExpression(parent) &&
-            parent.expression === node &&
-            ts.isStringLiteralLike(parent.argumentExpression) &&
-            parent.argumentExpression.text === "NODE_ENV");
-        if (!allowed) {
-          this.reportAt(
-            "browser/no-process-env",
-            node,
-            "process.env does not exist in the browser, and the build only replaces NODE_ENV",
-            "Read the value at build time (a define in bin/build.ts or the project config) or pass it in a data attribute"
-          );
+      if (this.isProcessReference(node)) {
+        const use = outerExpression(node);
+        const parent = use.parent;
+        if (parent && isMemberOf(parent, use)) {
+          const name = memberName(parent);
+          if (name === "env" || name === null) this.checkEnvUse(parent, env);
+        } else if (
+          parent &&
+          ts.isVariableDeclaration(parent) &&
+          parent.initializer &&
+          outerExpression(parent.initializer) === use
+        ) {
+          if (ts.isIdentifier(parent.name)) alias(parent);
+          else if (bindsName(parent.name, "env")) alias(parent);
+        } else if (
+          parent &&
+          ts.isBinaryExpression(parent) &&
+          parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+          outerExpression(parent.right) === use
+        ) {
+          alias(parent);
         }
       }
       ts.forEachChild(node, visit);
@@ -656,47 +937,133 @@ class FileAnalyzer {
     visit(this.sf);
   }
 
-  private checkRawSubscriptions() {
-    for (const call of this.calls(this.sf)) {
-      const callee = unwrap(call.expression);
-      const name = ts.isIdentifier(callee)
-        ? callee.text
-        : ts.isPropertyAccessExpression(callee)
-          ? callee.name.text
-          : "";
-      if (
-        name === "requestAnimationFrame" &&
-        (ts.isIdentifier(callee) ||
-          compact(callee.getText(this.sf)) === "window.requestAnimationFrame")
-      ) {
-        this.reportAt(
-          "subs/no-raw",
-          call,
-          "requestAnimationFrame runs its own loop next to the shared ticker",
-          'Use Raf.add from "@lib/subs" and call the result in onDestroy'
-        );
-      }
-      const first = call.arguments[0];
-      if (
-        name === "addEventListener" &&
-        first &&
-        ts.isStringLiteralLike(first) &&
-        first.text === "resize"
-      ) {
-        this.reportAt(
-          "subs/no-raw",
-          call,
-          "A resize listener runs next to the shared, debounced Resize subscription",
-          'Use Resize.add from "@lib/subs" and call the result in onDestroy'
-        );
-      }
+  /** `process.env` is `access`: only NODE_ENV may be read from it. */
+  private checkEnvUse(access: ts.Node, report: (node: ts.Node) => void) {
+    const value = outerExpression(access);
+    const parent = value.parent;
+    if (parent && isMemberOf(parent, value)) {
+      if (memberName(parent) !== "NODE_ENV") report(parent);
+      return;
     }
+    if (
+      parent &&
+      ts.isVariableDeclaration(parent) &&
+      ts.isObjectBindingPattern(parent.name) &&
+      parent.name.elements.length > 0 &&
+      parent.name.elements.every(
+        (element) =>
+          !element.dotDotDotToken &&
+          (element.propertyName ?? element.name).getText(this.sf) === "NODE_ENV"
+      )
+    ) {
+      return;
+    }
+    report(value);
+  }
+
+  /** `process`, `globalThis.process` or `window["process"]`. */
+  private isProcessReference(node: ts.Node): boolean {
+    if (ts.isIdentifier(node) && node.text === "process") {
+      const parent = node.parent;
+      if (!parent) return false;
+      if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
+        return false;
+      }
+      if (ts.isPropertyAssignment(parent) && parent.name === node) return false;
+      if (ts.isVariableDeclaration(parent) && parent.name === node) {
+        return false;
+      }
+      if (ts.isParameter(parent) && parent.name === node) return false;
+      if (ts.isBindingElement(parent)) return false;
+      if (ts.isTypeOfExpression(parent)) return false;
+      return true;
+    }
+    return (
+      (ts.isPropertyAccessExpression(node) ||
+        ts.isElementAccessExpression(node)) &&
+      memberName(node) === "process" &&
+      isGlobalObject(node.expression)
+    );
+  }
+
+  private checkRawSubscriptions() {
+    const frame = (node: ts.Node) =>
+      this.reportAt(
+        "subs/no-raw",
+        node,
+        "requestAnimationFrame runs its own loop next to the shared ticker",
+        'Use Raf.add from "@lib/subs" and call the result in onDestroy'
+      );
+    const resize = (node: ts.Node) =>
+      this.reportAt(
+        "subs/no-raw",
+        node,
+        "A resize listener runs next to the shared, debounced Resize subscription",
+        'Use Resize.add from "@lib/subs" and call the result in onDestroy'
+      );
+
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const callee = unwrap(node.expression);
+        if (globalCallName(callee) === "requestAnimationFrame") frame(node);
+        const first = node.arguments[0];
+        if (
+          memberOrBareName(callee) === "addEventListener" &&
+          first &&
+          ts.isStringLiteralLike(first) &&
+          first.text === "resize"
+        ) {
+          resize(node);
+        }
+      }
+      // const raf = window.requestAnimationFrame, or a bare reference.
+      if (
+        (ts.isPropertyAccessExpression(node) ||
+          ts.isElementAccessExpression(node)) &&
+        memberName(node) === "requestAnimationFrame" &&
+        isGlobalObject(node.expression)
+      ) {
+        const use = outerExpression(node);
+        const parent = use.parent;
+        const isCallee =
+          parent && ts.isCallExpression(parent) && parent.expression === use;
+        if (!isCallee) frame(node);
+      }
+      // const { requestAnimationFrame } = window
+      if (
+        ts.isBindingElement(node) &&
+        (node.propertyName ?? node.name).getText(this.sf) ===
+          "requestAnimationFrame" &&
+        node.parent.parent &&
+        ts.isVariableDeclaration(node.parent.parent) &&
+        node.parent.parent.initializer &&
+        isGlobalObject(unwrap(node.parent.parent.initializer))
+      ) {
+        frame(node);
+      }
+      // window.onresize = fn
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      ) {
+        const left = unwrap(node.left);
+        const isOnResize =
+          (ts.isIdentifier(left) && left.text === "onresize") ||
+          ((ts.isPropertyAccessExpression(left) ||
+            ts.isElementAccessExpression(left)) &&
+            memberName(left) === "onresize" &&
+            isGlobalObject(left.expression));
+        if (isOnResize) resize(node);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(this.sf);
   }
 
   // -- module rules --------------------------------------------------------
 
   private checkModuleShape() {
-    const base = path.posix.basename(this.file, ".ts");
+    const base = path.posix.basename(this.file).replace(/\.(ts|js)$/, "");
     const problem = moduleNameProblem(base);
     if (problem) {
       this.report(
@@ -731,12 +1098,15 @@ class FileAnalyzer {
       );
       return;
     }
+    // A .js module can't carry types, so only the shape of its parameters
+    // is checked.
+    const typed = this.file.endsWith(".ts");
     params.forEach((param, index) => {
       const type = param.type ? compact(param.type.getText(this.sf)) : "";
       if (
         !ts.isIdentifier(param.name) ||
         param.dotDotDotToken ||
-        type !== expected[index]
+        (typed && type !== expected[index])
       ) {
         this.reportAt(
           "module/signature",
@@ -811,6 +1181,15 @@ class FileAnalyzer {
           `${label} returns the function that unsubscribes, but its result is not kept`,
           `Store it (const stop = ${label}(...)) and call stop() inside onDestroy`
         );
+      } else if (where.kind === "collection") {
+        if (!this.drainedInDestroy(where.name, "call")) {
+          this.reportAt(
+            "cleanup/subscription",
+            call,
+            `${label} is added to ${where.name}, but onDestroy never calls each entry`,
+            `Call ${where.name}.forEach((stop) => stop()) inside onDestroy`
+          );
+        }
       } else if (!this.invokedInDestroy(where.name)) {
         this.reportAt(
           "cleanup/subscription",
@@ -833,8 +1212,9 @@ class FileAnalyzer {
         continue;
       }
       const receiver = compact(callee.expression.getText(this.sf));
+      const event = call.arguments[0];
       const handler = call.arguments[1] && unwrap(call.arguments[1]);
-      if (!handler) continue;
+      if (!event || !handler) continue;
 
       if (
         !ts.isIdentifier(handler) &&
@@ -848,95 +1228,70 @@ class FileAnalyzer {
         );
         continue;
       }
+      const eventText = compact(event.getText(this.sf));
       const handlerText = compact(handler.getText(this.sf));
-      if (!this.methodInDestroy(receiver, "off", handlerText)) {
+      if (
+        !this.callInDestroy(
+          (c) => this.isMethod(c, receiver, "off"),
+          [eventText, handlerText]
+        )
+      ) {
         this.reportAt(
           "cleanup/state-listener",
           call,
-          `${receiver}.on has no matching ${receiver}.off for ${handlerText} in onDestroy, so the listener outlives the page`,
-          `Call ${receiver}.off with the same event and ${handlerText} inside onDestroy`
+          `${receiver}.on(${eventText}) has no matching ${receiver}.off(${eventText}, ${handlerText}) in onDestroy, so the listener outlives the page`,
+          `Call ${receiver}.off(${eventText}, ${handlerText}) inside onDestroy`
         );
       }
     }
   }
 
   private checkListeners() {
-    for (const call of this.calls(this.sf)) {
-      const callee = unwrap(call.expression);
-      const name = ts.isPropertyAccessExpression(callee)
-        ? callee.name.text
-        : ts.isIdentifier(callee)
-          ? callee.text
-          : "";
-
-      if (
-        name === "addEventListener" &&
-        ts.isPropertyAccessExpression(callee)
-      ) {
-        this.checkEventListener(call, callee);
-      }
-      if (
-        name === "setInterval" &&
-        (ts.isIdentifier(callee) ||
-          compact(callee.getText(this.sf)) === "window.setInterval")
-      ) {
-        this.checkInterval(call);
-      }
-    }
-
     const visit = (node: ts.Node) => {
-      if (
-        ts.isNewExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        OBSERVERS.has(node.expression.text)
-      ) {
-        this.checkObserver(node, node.expression.text);
+      if (ts.isCallExpression(node)) {
+        const listener = this.listenerCall(node);
+        if (listener?.method === "addEventListener") {
+          this.checkEventListener(node, listener.target);
+        }
+        if (globalCallName(node.expression) === "setInterval") {
+          this.checkInterval(node);
+        }
+      }
+      if (ts.isNewExpression(node)) {
+        const name = globalCallName(node.expression);
+        if (name && OBSERVERS.has(name)) this.checkObserver(node, name);
       }
       ts.forEachChild(node, visit);
     };
     visit(this.sf);
   }
 
-  private checkEventListener(
-    call: ts.CallExpression,
-    callee: ts.PropertyAccessExpression
-  ) {
-    const target = compact(callee.expression.getText(this.sf));
+  /**
+   * An add/removeEventListener call and what it is attached to. A bare call
+   * and one on self or globalThis are on window.
+   */
+  private listenerCall(
+    call: ts.CallExpression
+  ): { method: string; target: string } | null {
+    const callee = unwrap(call.expression);
+    const method = memberOrBareName(callee);
+    if (method !== "addEventListener" && method !== "removeEventListener") {
+      return null;
+    }
+    if (ts.isIdentifier(callee)) return { method, target: "window" };
+    const receiver = (callee as MemberAccess).expression;
+    return {
+      method,
+      target: isGlobalObject(receiver)
+        ? "window"
+        : compact(receiver.getText(this.sf)),
+    };
+  }
+
+  private checkEventListener(call: ts.CallExpression, target: string) {
     const type = call.arguments[0];
     const handler = call.arguments[1] && unwrap(call.arguments[1]);
-    const options = call.arguments[2] && unwrap(call.arguments[2]);
-
-    if (options && ts.isObjectLiteralExpression(options)) {
-      const property = (key: string) =>
-        options.properties.find(
-          (p) => ts.isPropertyAssignment(p) && p.name.getText(this.sf) === key
-        ) as ts.PropertyAssignment | undefined;
-      if (property("once")?.initializer.kind === ts.SyntaxKind.TrueKeyword) {
-        return;
-      }
-      const hasSignal =
-        !!property("signal") ||
-        options.properties.some(
-          (p) => ts.isShorthandPropertyAssignment(p) && p.name.text === "signal"
-        );
-      if (hasSignal) {
-        const aborted = this.destroyCalls.some((c) => {
-          const f = unwrap(c.expression);
-          return ts.isPropertyAccessExpression(f) && f.name.text === "abort";
-        });
-        if (!aborted) {
-          this.reportAt(
-            "cleanup/listener",
-            call,
-            `${target}.addEventListener uses an AbortController signal, but abort() is never called in onDestroy`,
-            "Call controller.abort() inside onDestroy"
-          );
-        }
-        return;
-      }
-    }
-
-    const typeText = type ? type.getText(this.sf) : "event";
+    const typeText = type ? compact(type.getText(this.sf)) : "event";
     if (
       !handler ||
       (!ts.isIdentifier(handler) && !ts.isPropertyAccessExpression(handler))
@@ -945,39 +1300,50 @@ class FileAnalyzer {
         "cleanup/listener",
         call,
         `${target}.addEventListener(${typeText}) is given an inline function, which can't be removed`,
-        `Name the handler and call ${target}.removeEventListener(${typeText}, handler) inside onDestroy, or pass { once: true }`
+        `Name the handler and call ${target}.removeEventListener(${typeText}, handler) inside onDestroy`
       );
       return;
     }
     const handlerText = compact(handler.getText(this.sf));
-    if (!this.methodInDestroy(target, "removeEventListener", handlerText)) {
+    const removed = this.callInDestroy(
+      (c) => {
+        const other = this.listenerCall(c);
+        return (
+          other?.method === "removeEventListener" && other.target === target
+        );
+      },
+      [typeText, handlerText]
+    );
+    if (!removed) {
       this.reportAt(
         "cleanup/listener",
         call,
-        `${target}.addEventListener(${typeText}) has no matching removeEventListener for ${handlerText} in onDestroy`,
-        `Call ${target}.removeEventListener(${typeText}, ${handlerText}) inside onDestroy, or pass { once: true }`
+        `${target}.addEventListener(${typeText}) has no matching removeEventListener(${typeText}, ${handlerText}) on ${target} in onDestroy`,
+        `Call ${target}.removeEventListener(${typeText}, ${handlerText}) inside onDestroy`
       );
     }
   }
 
   private checkInterval(call: ts.CallExpression) {
     const where = this.storedAs(call);
-    const cleared = (name: string) =>
-      this.destroyCalls.some((c) => {
-        const f = compact(unwrap(c.expression).getText(this.sf));
-        return (
-          (f === "clearInterval" || f === "window.clearInterval") &&
-          !!c.arguments[0] &&
-          compact(c.arguments[0].getText(this.sf)) === name
-        );
-      });
-    if (where.kind === "stored" && cleared(where.name)) return;
+    const clears = (c: ts.CallExpression) =>
+      globalCallName(c.expression) === "clearInterval";
     if (where.kind === "stored") {
+      const cleared = this.callInDestroy(clears, [where.name]);
+      if (cleared) return;
       this.reportAt(
         "cleanup/listener",
         call,
         `setInterval is stored as ${where.name} but clearInterval(${where.name}) is never called in onDestroy`,
         `Call clearInterval(${where.name}) inside onDestroy`
+      );
+    } else if (where.kind === "collection") {
+      if (this.drainedInDestroy(where.name, "clear")) return;
+      this.reportAt(
+        "cleanup/listener",
+        call,
+        `setInterval's id is added to ${where.name}, but onDestroy never clears each entry`,
+        `Call ${where.name}.forEach((id) => clearInterval(id)) inside onDestroy`
       );
     } else {
       this.reportAt(
@@ -992,12 +1358,27 @@ class FileAnalyzer {
   private checkObserver(node: ts.NewExpression, name: string) {
     const where = this.storedAs(node);
     if (where.kind === "stored") {
-      if (this.methodInDestroy(where.name, "disconnect")) return;
+      if (
+        this.callInDestroy(
+          (c) => this.isMethod(c, where.name, "disconnect"),
+          []
+        )
+      ) {
+        return;
+      }
       this.reportAt(
         "cleanup/listener",
         node,
         `${name} is stored as ${where.name} but ${where.name}.disconnect() is never called in onDestroy`,
         `Call ${where.name}.disconnect() inside onDestroy`
+      );
+    } else if (where.kind === "collection") {
+      if (this.drainedInDestroy(where.name, "disconnect")) return;
+      this.reportAt(
+        "cleanup/listener",
+        node,
+        `${name} is added to ${where.name}, but onDestroy never disconnects each entry`,
+        `Call ${where.name}.forEach((observer) => observer.disconnect()) inside onDestroy`
       );
     } else {
       this.reportAt(
