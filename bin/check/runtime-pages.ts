@@ -87,9 +87,17 @@ export function normalPage(script: string, markup: string, taxi = false) {
   return page("", `${root(markup, taxi)}<script src="${script}"></script>`);
 }
 
-/** The bundle from a synchronous <script> in <head>, which runs before <body> exists. */
+/**
+ * The bundle from a synchronous <script> in <head>, which runs before <body>
+ * exists. With Taxi on it is `defer`, as the loader writes it for production:
+ * Taxi's constructor needs the page's [data-taxi] element, which a script that
+ * runs before the body is parsed can never find.
+ */
 export function earlyPage(script: string, markup: string, taxi = false) {
-  return page(`<script src="${script}"></script>`, root(markup, taxi));
+  return page(
+    `<script${taxi ? " defer" : ""} src="${script}"></script>`,
+    root(markup, taxi)
+  );
 }
 
 /** Webflow's editor marks the page with this node as the first child of <body>. */

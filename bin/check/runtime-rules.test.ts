@@ -4,6 +4,7 @@ import {
   cleanMessage,
   compareCounts,
   COUNT_ORDER,
+  RELATIVE_COUNTS,
   type Counts,
 } from "./runtime-rules";
 
@@ -83,6 +84,9 @@ const counts = (overrides: Partial<Counts> = {}): Counts => ({
   Scroll: 0,
   State: 0,
   editor: 1,
+  timers: 0,
+  listeners: 0,
+  observers: 0,
   ...overrides,
 });
 const cycle = (mounted: Partial<Counts>, destroyed: Partial<Counts> = {}) => ({
@@ -97,7 +101,7 @@ describe("compareCounts", () => {
     expect(compareCounts(base, [same, same, same])).toEqual([]);
   });
 
-  test.each(COUNT_ORDER)(
+  test.each(COUNT_ORDER.filter((name) => !RELATIVE_COUNTS.includes(name)))(
     "%s left over after destroy names the count",
     (name) => {
       const base = counts();
@@ -131,4 +135,29 @@ describe("compareCounts", () => {
       compareCounts(counts(), [leaky, leaky, leaky]).map((p) => p.count)
     ).toEqual(["Raf", "State"]);
   });
+});
+
+describe("compareCounts: timers, listeners and observers", () => {
+  test.each(RELATIVE_COUNTS)(
+    "%s that a module adds once on its first cycle and keeps flat are fine",
+    (name) => {
+      const lazy = cycle({ [name]: 13 }, { [name]: 13 });
+      expect(compareCounts(counts(), [lazy, lazy, lazy])).toEqual([]);
+    }
+  );
+
+  test.each(RELATIVE_COUNTS)(
+    "%s that grow on every cycle are a leak, named",
+    (name) => {
+      const problems = compareCounts(counts(), [
+        cycle({ [name]: 1 }, { [name]: 1 }),
+        cycle({ [name]: 2 }, { [name]: 2 }),
+        cycle({ [name]: 3 }, { [name]: 3 }),
+      ]);
+      expect(problems.map((p) => p.count)).toEqual([name]);
+      expect(problems[0]?.message).toContain(
+        `${name} count grew from 1 after destroy in cycle 1 to 2`
+      );
+    }
+  );
 });

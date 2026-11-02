@@ -22,8 +22,9 @@
     "connect": "bun run bin/connect.ts",
     "check": "bun run bin/check/index.ts",
     "check:all": "bun run bin/check/index.ts --all",
-    "check:runtime": "bun run bin/check/runtime.ts",
+    "check:runtime": "bun run bin/check/index.ts --only runtime",
     "check:live": "bun run bin/check/live.ts",
+    "check:mutations": "bun run bin/check/verify-mutations.ts",
     "fix": "bun run bin/check/fix.ts",
     "new:module": "bun run bin/new-module.ts",
     "sync:skills": "bun run bin/sync-skills.ts"

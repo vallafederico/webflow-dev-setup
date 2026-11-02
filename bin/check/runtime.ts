@@ -1,8 +1,11 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import ts from "typescript";
 import type { Browser, Page } from "playwright";
+import { onTerminate } from "./cleanup";
 import { readChecksConfig } from "./checks-config";
+import { installCounters } from "./leak-patches";
 import {
   allMarkup,
   earlyPage,
@@ -31,6 +34,8 @@ import { type Check, type Finding, ToolFailure, toResult } from "./types";
 const INSTALL = "pnpm exec playwright install chromium";
 /** After `load`: lets timers, animation frames and the first page hooks run and fail. */
 const SETTLE_MS = 800;
+/** After the editor marker is added or removed: a frame, then the observer callbacks. */
+const FLIP_SETTLE_MS = 150;
 const NAVIGATION_TIMEOUT_MS = 15_000;
 const RUN_TIMEOUT_MS = 240_000;
 
@@ -120,31 +125,181 @@ function watch(
   });
 }
 
+/** What a step reports when the page stops answering: the page's fault, not the tool's. */
+const isTimeout = (error: unknown) =>
+  (error as Error)?.name === "TimeoutError" ||
+  /Timeout \d+ms exceeded/.test(String((error as Error)?.message));
+
+const stuck = (
+  rule: string,
+  step: string,
+  file: string,
+  what: string
+): Problem => ({
+  rule,
+  file,
+  message: `${step}: ${what}, so the page stopped responding`,
+  fix: "Look for a module or page hook that loops forever, or blocks the main thread, while it loads or runs",
+});
+
+/** Modules in the page that createCycles never started. */
+const notStarted = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-module]"))
+      .filter((element) => !element._moduleInitialized)
+      .map((element) => element.dataset.module ?? "")
+  );
+
+interface VisitOptions {
+  /** Fail when a `[data-module]` element was left unstarted after loading. */
+  expectStarted?: boolean;
+  /** Runs after the page has settled, for checks that change the page. */
+  after?: (page: Page) => Promise<void>;
+}
+
 async function visit(
   browser: Browser,
   url: string,
   step: string,
   rule: string,
   file: string,
-  files: ModuleFiles
+  files: ModuleFiles,
+  options: VisitOptions = {}
 ) {
   const context = await browser.newContext();
   const problems: Problem[] = [];
   try {
     const page = await context.newPage();
     watch(page, step, rule, file, problems, files);
-    await page.goto(url, { waitUntil: "load", timeout: NAVIGATION_TIMEOUT_MS });
-    await page.waitForTimeout(SETTLE_MS);
+    try {
+      await page.goto(url, {
+        waitUntil: "load",
+        timeout: NAVIGATION_TIMEOUT_MS,
+      });
+      await page.waitForTimeout(SETTLE_MS);
+      if (options.expectStarted) {
+        const unstarted = await notStarted(page);
+        if (unstarted.length > 0) {
+          problems.push({
+            rule,
+            file,
+            message: `${step}: ${unstarted.join(", ")} never started, so the bundle loaded without running createCycles()`,
+            fix: "Make sure the entry imports the app (src/app.ts, which calls createCycles, runPageIn and runMount)",
+          });
+        }
+      }
+      await options.after?.(page);
+    } catch (error) {
+      if (!isTimeout(error)) throw error;
+      problems.push(
+        stuck(
+          rule,
+          step,
+          file,
+          `the page did not finish within ${NAVIGATION_TIMEOUT_MS}ms`
+        )
+      );
+    }
   } finally {
     await context.close();
   }
   return problems;
 }
 
-type Phase = "runPageIn" | "runPageOut";
+/**
+ * The editor turning on and off after load, as it does when the Designer
+ * switches mode. The marker is the first child of <body>; the shared
+ * MutationObserver then calls every onEditor callback.
+ */
+async function flipEditor(page: Page) {
+  for (const marked of [true, false]) {
+    await page.evaluate((on) => {
+      if (on) {
+        const node = document.createElement("div");
+        node.className = "w-editor-publish-node";
+        document.body.prepend(node);
+      } else {
+        document.querySelector(".w-editor-publish-node")?.remove();
+      }
+    }, marked);
+    await page.evaluate(
+      () =>
+        new Promise((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(done))
+        )
+    );
+    await page.waitForTimeout(FLIP_SETTLE_MS);
+  }
+}
+
+const NAMES = ["createCycles", "runPageIn", "runMount"] as const;
+const EFFECT: Record<(typeof NAMES)[number], string> = {
+  createCycles: "no module would start",
+  runPageIn: "onPageIn hooks would never run",
+  runMount: "onMount hooks would never run",
+};
+
+/**
+ * The calls the app entry must make on load. Nothing in the page shows that
+ * onMount hooks ran, so this reads the source: `createCycles()`, `runPageIn()`
+ * and `runMount()` must be called in src/app.ts, directly or through
+ * `runInitial()` in src/lib/pages.ts. A call in a comment doesn't count.
+ */
+export function bootProblems(root: string): string[] {
+  const callsIn = (file: string): Set<string> | null => {
+    const full = path.join(root, file);
+    if (!existsSync(full)) return null;
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(full, "utf8"),
+      ts.ScriptTarget.Latest,
+      true
+    );
+    const calls = new Set<string>();
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
+        calls.add(node.expression.text);
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return calls;
+  };
+  const appFile =
+    ["src/app.ts", "src/app.js"].find((f) => existsSync(path.join(root, f))) ??
+    "src/app.ts";
+  const calls = callsIn(appFile);
+  if (!calls) return [`${appFile} does not exist`];
+  if (calls.has("runInitial")) {
+    // runInitial() calls them for the app, so count what it calls.
+    for (const call of callsIn("src/lib/pages.ts") ?? []) calls.add(call);
+  }
+  return NAMES.filter((name) => !calls.has(name)).map(
+    (name) => `${appFile} never calls ${name}(), so ${EFFECT[name]}`
+  );
+}
 
 const isFailure = (problem: Problem) =>
   problem.severity !== "warning" && problem.rule !== "runtime/console-warning";
+
+const fixtureApi = (page: Page) => ({
+  counts: () =>
+    page.evaluate(() => (window as unknown as Fixture).__wdsCheck.counts()),
+  setFixture: (html: string) =>
+    page.evaluate(
+      (value) => (window as unknown as Fixture).__wdsCheck.setFixture(value),
+      html
+    ),
+  cycles: () =>
+    page.evaluate(() => (window as unknown as Fixture).__wdsCheck.cycles()),
+  pageIn: () =>
+    page.evaluate(() => (window as unknown as Fixture).__wdsCheck.pageIn()),
+  mount: () =>
+    page.evaluate(() => (window as unknown as Fixture).__wdsCheck.mount()),
+  pageOut: () =>
+    page.evaluate(() => (window as unknown as Fixture).__wdsCheck.pageOut()),
+  destroy: () =>
+    page.evaluate(() => (window as unknown as Fixture).__wdsCheck.destroy()),
+});
 
 /** The lifecycle, driven directly because Taxi is off and real navigation would never call onDestroy. */
 async function leakRun(
@@ -158,61 +313,46 @@ async function leakRun(
   const context = await browser.newContext();
   const problems: Problem[] = [];
   try {
+    await context.addInitScript(installCounters);
     const page = await context.newPage();
     watch(page, step, rule, "src/modules", problems, options.files);
-    await page.goto(
-      `${origin}/__page/${options.editor ? "leak-editor" : "leak"}.html`,
-      {
-        waitUntil: "load",
-        timeout: NAVIGATION_TIMEOUT_MS,
-      }
-    );
+    const api = fixtureApi(page);
 
-    const counts = () =>
-      page.evaluate(() =>
-        (window as unknown as Fixture).__wdsCheck.counts()
-      ) as Promise<Counts>;
-    const baseline = await counts();
-    const cycles: CycleCounts[] = [];
-
-    const hook = async (phase: Phase): Promise<boolean> => {
-      const call =
-        phase === "runPageIn"
-          ? page.evaluate(() =>
-              (window as unknown as Fixture).__wdsCheck.pageIn()
-            )
-          : page.evaluate(() =>
-              (window as unknown as Fixture).__wdsCheck.pageOut()
-            );
+    /** One call into the page. A call that never returns is the page's problem, so it is a finding. */
+    const call = async <T>(
+      name: string,
+      run: () => Promise<T>
+    ): Promise<{ value: T } | null> => {
       const timeout = Symbol("timeout");
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const result = await Promise.race([
-        call.then(() => "settled" as const),
-        new Promise<typeof timeout>((resolve) => {
-          timer = setTimeout(() => resolve(timeout), hookTimeoutMs);
-        }),
-      ]);
-      clearTimeout(timer);
-      if (result === timeout) {
-        void call.catch(() => {});
-        problems.push({
-          rule: "runtime/hook-timeout",
-          file: "src/modules",
-          message: `${step}: ${phase} did not settle within ${hookTimeoutMs}ms, so a page hook never resolves`,
-          fix: "Find the onPageIn or onPageOut hook that awaits something that never finishes, such as a GSAP tween that was killed. Finish a tween with progress(1) instead of kill()",
-        });
-        return false;
-      }
-      return true;
-    };
-
-    const sync = async (
-      name: string,
-      run: () => Promise<unknown>
-    ): Promise<boolean> => {
+      const pending = run();
       try {
-        await run();
-        return true;
+        const result = await Promise.race([
+          pending,
+          new Promise<typeof timeout>((resolve) => {
+            timer = setTimeout(() => resolve(timeout), hookTimeoutMs);
+          }),
+        ]);
+        if (result === timeout) {
+          void pending.catch(() => {});
+          problems.push(
+            name === "runPageIn" || name === "runPageOut"
+              ? {
+                  rule: "runtime/hook-timeout",
+                  file: "src/modules",
+                  message: `${step}: ${name} did not settle within ${hookTimeoutMs}ms, so a page hook never resolves`,
+                  fix: "Find the onPageIn or onPageOut hook that awaits something that never finishes, such as a GSAP tween that was killed. Finish a tween with progress(1) instead of kill()",
+                }
+              : stuck(
+                  rule,
+                  step,
+                  "src/modules",
+                  `${name} did not return within ${hookTimeoutMs}ms`
+                )
+          );
+          return null;
+        }
+        return { value: result as T };
       } catch (error) {
         problems.push({
           rule,
@@ -220,18 +360,36 @@ async function leakRun(
           message: `${step}: ${name} threw: ${String((error as Error).message).split("\n")[0]}`,
           fix: "Fix the onMount or onDestroy callback that throws",
         });
-        return false;
+        return null;
+      } finally {
+        clearTimeout(timer);
       }
     };
 
-    for (let i = 0; i < CYCLES; i++) {
-      await page.evaluate(
-        (html) => (window as unknown as Fixture).__wdsCheck.setFixture(html),
-        markup
+    try {
+      await page.goto(
+        `${origin}/__page/${options.editor ? "leak-editor" : "leak"}.html`,
+        { waitUntil: "load", timeout: NAVIGATION_TIMEOUT_MS }
       );
-      const started = await page.evaluate(() =>
-        (window as unknown as Fixture).__wdsCheck.cycles()
+    } catch (error) {
+      if (!isTimeout(error)) throw error;
+      problems.push(
+        stuck(
+          rule,
+          step,
+          "src/modules",
+          `the page did not finish within ${NAVIGATION_TIMEOUT_MS}ms`
+        )
       );
+      return problems;
+    }
+
+    const baseline = (await call("counts", api.counts))?.value;
+    const cycles: CycleCounts[] = [];
+    for (let i = 0; baseline && i < CYCLES; i++) {
+      if (!(await call("setFixture", () => api.setFixture(markup)))) break;
+      const started = (await call("createCycles", api.cycles))?.value;
+      if (!started) break;
       if (started.called === 0 || started.uninitialized.length > 0) {
         // A module that threw was already reported with its own message.
         if (!problems.some(isFailure)) {
@@ -244,24 +402,15 @@ async function leakRun(
         }
         break;
       }
-      if (!(await hook("runPageIn"))) break;
-      if (
-        !(await sync("runMount", () =>
-          page.evaluate(() => (window as unknown as Fixture).__wdsCheck.mount())
-        ))
-      )
-        break;
-      const mounted = await counts();
-      if (!(await hook("runPageOut"))) break;
-      if (
-        !(await sync("runDestroy", () =>
-          page.evaluate(() =>
-            (window as unknown as Fixture).__wdsCheck.destroy()
-          )
-        ))
-      )
-        break;
-      cycles.push({ mounted, destroyed: await counts() });
+      if (!(await call("runPageIn", api.pageIn))) break;
+      if (!(await call("runMount", api.mount))) break;
+      const mounted = (await call("counts", api.counts))?.value;
+      if (!mounted) break;
+      if (!(await call("runPageOut", api.pageOut))) break;
+      if (!(await call("runDestroy", api.destroy))) break;
+      const destroyed = (await call("counts", api.counts))?.value;
+      if (!destroyed) break;
+      cycles.push({ mounted, destroyed });
     }
 
     if (process.env.CHECK_DEBUG) {
@@ -271,7 +420,7 @@ async function leakRun(
     }
 
     // Counts after an aborted cycle say nothing about leaks.
-    if (cycles.length === CYCLES && !problems.some(isFailure)) {
+    if (baseline && cycles.length === CYCLES && !problems.some(isFailure)) {
       for (const problem of compareCounts(baseline, cycles)) {
         problems.push({
           rule: "runtime/leak",
@@ -287,105 +436,66 @@ async function leakRun(
   return problems;
 }
 
-/** Wiring Taxi needs, read from source so a failure can say what's missing. */
-export function taxiWiringProblems(root: string): string[] {
-  const live = (file: string) => {
-    const full = path.join(root, file);
-    if (!existsSync(full)) return null;
-    return readFileSync(full, "utf8")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-  };
-  const problems: string[] = [];
-  const app = live("src/app.ts") ?? live("src/app.js");
-  const pages = live("src/lib/pages.ts");
-  if (!pages || !/export\s+const\s+Pages\s*=\s*new\s+_Pages\s*\(/.test(pages)) {
-    problems.push(
-      "src/lib/pages.ts does not create Pages (`export const Pages = new _Pages();` is missing or commented out)"
-    );
-  }
-  if (!app || !/\bpages\s*=\s*Pages\b/.test(app)) {
-    problems.push(
-      "src/app.ts does not set `pages = Pages` (it is missing or commented out)"
-    );
-  }
-  if (
-    !app ||
-    !/import\s*\{[^}]*\bPages\b[^}]*\}\s*from\s*["']@lib\/pages["']/.test(app)
-  ) {
-    problems.push(
-      'src/app.ts does not import { Pages } from "@lib/pages" (missing or commented out)'
-    );
-  }
-  return problems;
-}
-
 async function taxiRun(
   browser: Browser,
   origin: string,
-  root: string,
   files: ModuleFiles
 ): Promise<Problem[]> {
   const step = "Taxi navigation";
   const rule = "runtime/taxi";
-  const wiring = taxiWiringProblems(root);
-  if (wiring.length > 0) {
-    return [
-      {
-        rule,
-        file: "src/app.ts",
-        message: `${step}: checks.config.json has "taxi": true, but Taxi is not wired: ${wiring.join("; ")}`,
-        fix: 'Enable Taxi (see the webflow-page-transitions skill), or set "taxi" to false in checks.config.json',
-      },
-    ];
-  }
   const context = await browser.newContext();
   const problems: Problem[] = [];
   try {
     const page = await context.newPage();
     watch(page, step, rule, "src/lib/pages.ts", problems, files);
-    await page.goto(`${origin}/__taxi/a.html`, {
-      waitUntil: "load",
-      timeout: NAVIGATION_TIMEOUT_MS,
-    });
-    await page.waitForTimeout(SETTLE_MS);
-    await page.evaluate(() => {
-      (window as unknown as { __taxiMarker: string }).__taxiMarker =
-        "same document";
-    });
-
-    for (const target of ["b", "a"]) {
-      await page.click("#taxi-link");
-      try {
-        await page.waitForFunction(
-          (title) =>
-            document.querySelector("#taxi-title")?.textContent === title,
-          `Taxi page ${target}`,
-          { timeout: NAVIGATION_TIMEOUT_MS }
-        );
-      } catch {
-        problems.push({
-          rule,
-          file: "src/lib/pages.ts",
-          message: `${step}: following the link to page ${target} did not show page ${target} within ${NAVIGATION_TIMEOUT_MS}ms`,
-          fix: "Check that links are not excluded in PAGES_CONFIG, that both pages have data-taxi and data-taxi-view, and that the transition calls done()",
-        });
-        break;
-      }
+    try {
+      await page.goto(`${origin}/__taxi/a.html`, {
+        waitUntil: "load",
+        timeout: NAVIGATION_TIMEOUT_MS,
+      });
       await page.waitForTimeout(SETTLE_MS);
-      const marker = await page.evaluate(
-        () => (window as unknown as { __taxiMarker?: string }).__taxiMarker
-      );
-      if (marker !== "same document") {
-        problems.push({
-          rule,
-          file: "src/lib/pages.ts",
-          message: `${step}: the link to page ${target} did a full page load, so Taxi is not handling navigation`,
-          fix: "Make sure new _Pages() runs (src/lib/pages.ts) and that the page wraps its content in data-taxi and data-taxi-view",
-        });
-        break;
+      await page.evaluate(() => {
+        (window as unknown as { __taxiMarker: string }).__taxiMarker =
+          "same document";
+      });
+
+      for (const target of ["b", "a"]) {
+        await page.click("#taxi-link", { timeout: NAVIGATION_TIMEOUT_MS });
+        try {
+          await page.waitForFunction(
+            (title) =>
+              document.querySelector("#taxi-title")?.textContent === title,
+            `Taxi page ${target}`,
+            { timeout: NAVIGATION_TIMEOUT_MS }
+          );
+        } catch {
+          problems.push({
+            rule,
+            file: "src/lib/pages.ts",
+            message: `${step}: following the link to page ${target} did not show page ${target} within ${NAVIGATION_TIMEOUT_MS}ms`,
+            fix: "Check that links are not excluded in PAGES_CONFIG, that both pages have data-taxi and data-taxi-view, and that the transition calls done()",
+          });
+          break;
+        }
+        await page.waitForTimeout(SETTLE_MS);
+        const marker = await page.evaluate(
+          () => (window as unknown as { __taxiMarker?: string }).__taxiMarker
+        );
+        if (marker !== "same document") {
+          problems.push({
+            rule,
+            file: "src/lib/pages.ts",
+            message: `${step}: the link to page ${target} did a full page load, so Taxi is not handling navigation`,
+            fix: "Make sure new _Pages() runs (src/lib/pages.ts, src/app.ts) and that the page wraps its content in data-taxi and data-taxi-view",
+          });
+          break;
+        }
       }
+    } catch (error) {
+      if (!isTimeout(error)) throw error;
+      problems.push(
+        stuck(rule, step, "src/lib/pages.ts", "a step did not finish in time")
+      );
     }
   } finally {
     await context.close();
@@ -455,6 +565,11 @@ export const runtime: Check = {
     if (fixtures.length > 0) return toResult("runtime", findings);
 
     const tmp = mkdtempSync(path.join(tmpdir(), "runtime-check-"));
+    // A killed run must not leave Chromium or its folder behind.
+    const forget = onTerminate(async () => {
+      await browser?.close().catch(() => {});
+      rmSync(tmp, { recursive: true, force: true });
+    });
     const productionDir = path.join(tmp, "production");
     const testDir = path.join(tmp, "test");
     let browser: Browser | undefined;
@@ -511,7 +626,7 @@ export const runtime: Check = {
           case "early":
             return entry ? earlyPage(`/${entry}`, markup, config.taxi) : null;
           case "editor":
-            return editorPage("/app.js", markup, config.taxi);
+            return entry ? editorPage(`/${entry}`, markup, config.taxi) : null;
           case "leak":
             return leakPage("/__test/fixture-entry.js", false, config.taxi);
           case "leak-editor":
@@ -570,6 +685,14 @@ export const runtime: Check = {
       const chromium = browser;
 
       // 1. Normal load, then 2. early load, for every built entry
+      for (const message of bootProblems(root)) {
+        add({
+          rule: "runtime/normal-load",
+          file: entrySource(root, "app.js"),
+          message: `Normal load: ${message}`,
+          fix: "Call createCycles(), runPageIn() and runMount() from src/app.ts, as the template does",
+        });
+      }
       await Promise.all(
         entries.flatMap((entry, index) => {
           const file = entrySource(root, entry);
@@ -580,7 +703,8 @@ export const runtime: Check = {
               `Normal load (${entry})`,
               "runtime/normal-load",
               file,
-              files
+              files,
+              { expectStarted: true }
             ).then(emit),
             visit(
               chromium,
@@ -639,16 +763,31 @@ export const runtime: Check = {
         rule: "runtime/leak",
       });
 
-      // 4. Editor load: the production bundle, and the lifecycle once more
-      emit(
-        await visit(
-          chromium,
-          `${origin}/__page/editor/0.html`,
-          "Editor load",
-          "runtime/editor-load",
-          "src/app.ts",
-          files
-        )
+      // 4. Editor load of every entry, then the editor turning on and off after load, then the lifecycle once more
+      await Promise.all(
+        entries.flatMap((entry, index) => {
+          const file = entrySource(root, entry);
+          return [
+            visit(
+              chromium,
+              `${origin}/__page/editor/${index}.html`,
+              `Editor load (${entry})`,
+              "runtime/editor-load",
+              file,
+              files,
+              { expectStarted: true }
+            ).then(emit),
+            visit(
+              chromium,
+              `${origin}/__page/normal/${index}.html`,
+              `Editor switch (${entry})`,
+              "runtime/editor-load",
+              file,
+              files,
+              { after: flipEditor }
+            ).then(emit),
+          ];
+        })
       );
       await lifecycle({
         editor: true,
@@ -657,7 +796,7 @@ export const runtime: Check = {
       });
 
       // 5. Taxi navigation, only when the project has turned Taxi on
-      if (config.taxi) emit(await taxiRun(chromium, origin, root, files));
+      if (config.taxi) emit(await taxiRun(chromium, origin, files));
     } catch (error) {
       if (timedOut) {
         throw new ToolFailure(
@@ -666,6 +805,7 @@ export const runtime: Check = {
       }
       throw error;
     } finally {
+      forget();
       clearTimeout(watchdog);
       await browser?.close().catch(() => {});
       server?.stop(true);
@@ -674,12 +814,3 @@ export const runtime: Check = {
     return toResult("runtime", findings);
   },
 };
-
-if (import.meta.main) {
-  // `pnpm check:runtime`: this check alone, with the same output and exit codes as pnpm check.
-  // Not awaited at the top level: index.ts imports the registry, which imports
-  // this file, and a pending top-level await here would deadlock that cycle.
-  void import("./single")
-    .then(({ main }) => main(runtime, process.argv.slice(2)))
-    .then((code) => process.exit(code));
-}

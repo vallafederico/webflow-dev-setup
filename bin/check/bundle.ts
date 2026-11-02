@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { MANIFEST_FILE, requireBuild } from "./build";
+import { buildBlocked, MANIFEST_FILE, requireBuild } from "./build";
 import { readChecksConfig } from "./checks-config";
 import { toPosix } from "./tools";
 import { type Check, type Finding, ToolFailure, toResult } from "./types";
@@ -59,7 +59,10 @@ export function parseEnv(text: string): Record<string, string> {
   return values;
 }
 
-/** Secret-looking values from the project's env files, keyed by name. Only names, never values, are reported. */
+/**
+ * Secret-looking values from the project's env files, keyed by `file:name` so
+ * the same name in two files is two secrets. Only names, never values, are reported.
+ */
 export function readSecrets(root: string): Map<string, string> {
   const secrets = new Map<string, string>();
   for (const name of ENV_FILES) {
@@ -69,7 +72,7 @@ export function readSecrets(root: string): Map<string, string> {
       parseEnv(readFileSync(file, "utf8"))
     )) {
       if (SECRET_KEY.test(key) && value.length >= MIN_SECRET_LENGTH) {
-        secrets.set(`${key}`, value);
+        secrets.set(`${name}:${key}`, value);
       }
     }
   }
@@ -144,6 +147,8 @@ export const bundle: Check = {
   name: "bundle",
   tier: "all",
   async run({ root }) {
+    const blocked = buildBlocked(root, "bundle");
+    if (blocked) return blocked;
     requireBuild(root);
     const dist = path.join(root, "dist");
     const config = readChecksConfig(root);
@@ -204,10 +209,11 @@ export const bundle: Check = {
 
     // -- Leftovers and secrets
     const secrets = readSecrets(root);
-    const secretBuffers = [...secrets].map(([key, value]) => {
+    const secretBuffers = [...secrets].map(([id, value]) => {
       const escaped = JSON.stringify(value).slice(1, -1);
       return {
-        key,
+        key: id.slice(id.indexOf(":") + 1),
+        file: id.slice(0, id.indexOf(":")),
         variants: [...new Set([value, escaped])].map((text) =>
           Buffer.from(text)
         ),
@@ -224,7 +230,7 @@ export const bundle: Check = {
           add({
             rule: "bundle/secret",
             file: display,
-            message: `${display} contains the value of ${secret.key} from the project's env file`,
+            message: `${display} contains the value of ${secret.key} from ${secret.file}`,
             fix: `Stop the value reaching the build: remove ${secret.key} from the code, define or public/ file that carries it, then rebuild`,
           });
         }

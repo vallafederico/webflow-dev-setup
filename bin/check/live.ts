@@ -8,6 +8,10 @@ export const MAIN_BRANCH = "main";
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_INTERVAL_MS = 5_000;
 const MANIFEST = "build-manifest.json";
+/** A manifest with no commit is stale or never records one; it does not need the full wait. */
+const NULL_COMMIT_WAIT_MS = 60_000;
+const FILE_TIMEOUT_MS = 15_000;
+const MANIFEST_TIMEOUT_MS = 15_000;
 
 export interface LiveDeps {
   fetch(url: string, init?: RequestInit): Promise<Response>;
@@ -15,6 +19,8 @@ export interface LiveDeps {
   git(args: string[]): Promise<{ code: number; stdout: string }>;
   sleep(ms: number): Promise<void>;
   now(): number;
+  /** Progress while waiting, so a silent run isn't mistaken for a hung one. */
+  log(message: string): void;
 }
 
 export interface LiveOptions {
@@ -109,26 +115,43 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
           fix: "Commit and push your work, then run pnpm check:live again",
         });
       }
-      const upstream = await git("rev-parse", "@{u}");
-      if (upstream.code !== 0 || !upstream.stdout) {
-        throw new ToolFailure(
-          "the current branch has no upstream, so HEAD has not been pushed",
-          {
-            fix: "Run git push -u origin HEAD, wait for the deploy to start, then run pnpm check:live again",
-          }
-        );
-      }
-      if (upstream.stdout !== head.stdout) {
-        throw new ToolFailure(
-          `HEAD (${head.stdout}) is not what the upstream branch has (${upstream.stdout}), so no deployment matches it`,
-          {
-            fix: "Push or pull until HEAD equals its upstream, then run pnpm check:live again",
-          }
-        );
+      // A detached HEAD has no upstream, so a remote branch containing it is the proof.
+      const symbolic = await git("symbolic-ref", "-q", "HEAD");
+      const detached = symbolic.code !== 0 || !symbolic.stdout;
+      if (detached) {
+        const remotes = await git("branch", "-r", "--contains", "HEAD");
+        if (remotes.code !== 0 || !remotes.stdout) {
+          throw new ToolFailure(
+            "HEAD is detached and no remote branch contains it, so it has not been pushed",
+            {
+              fix: "Push the commit to a branch, then run pnpm check:live again",
+            }
+          );
+        }
+      } else {
+        const upstream = await git("rev-parse", "@{u}");
+        if (upstream.code !== 0 || !upstream.stdout) {
+          throw new ToolFailure(
+            "the current branch has no upstream, so HEAD has not been pushed",
+            {
+              fix: "Run git push -u origin HEAD, wait for the deploy to start, then run pnpm check:live again",
+            }
+          );
+        }
+        if (upstream.stdout !== head.stdout) {
+          throw new ToolFailure(
+            `HEAD (${head.stdout}) is not what the upstream branch has (${upstream.stdout}), so no deployment matches it`,
+            {
+              fix: "Push or pull until HEAD equals its upstream, then run pnpm check:live again",
+            }
+          );
+        }
       }
 
       // -- Which deployment
-      const branch = (await git("rev-parse", "--abbrev-ref", "HEAD")).stdout;
+      const branch = detached
+        ? ""
+        : symbolic.stdout.replace(/^refs\/heads\//, "");
       let url = options.url;
       if (!url) {
         if (branch !== MAIN_BRANCH) {
@@ -163,7 +186,15 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
         const parsed = new URL(url);
         if (!/^https?:$/.test(parsed.protocol)) throw new Error("not http(s)");
         origin = parsed.origin;
-      } catch {
+        // The manifest and files are found at the root, so a path would point at the wrong place.
+        if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+          throw new ToolFailure(
+            `--url ${url} has a path, query or fragment, but the files are looked up at the root of the origin`,
+            { fix: `Pass only the origin: --url ${parsed.origin}` }
+          );
+        }
+      } catch (error) {
+        if (error instanceof ToolFailure) throw error;
         throw new ToolFailure(`--url ${url} is not a valid http(s) address`, {
           fix: "Pass the full address, such as https://my-branch-acme.team.workers.dev",
         });
@@ -175,22 +206,45 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
         findings.push({ rule, severity: "error", file, line: 1, message, fix });
 
       const noCache = { "cache-control": "no-cache", pragma: "no-cache" };
-      const request = (target: string) =>
+      // A server that accepts the connection and never answers must not outlast --timeout.
+      const request = (target: string, timeoutMs: number) =>
         deps.fetch(target, {
           cache: "no-store",
           headers: noCache,
           redirect: "follow",
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
-      const deadline = deps.now() + options.timeoutMs;
+      const start = deps.now();
+      const deadline = start + options.timeoutMs;
       let seen:
         | { kind: "commit"; commit: string | null }
         | { kind: "error"; reason: string }
         | null = null;
       let manifest: Manifest | null = null;
+      let nullSince: number | null = null;
       for (;;) {
         try {
-          const response = await request(`${origin}/${MANIFEST}`);
+          const response = await request(
+            `${origin}/${MANIFEST}`,
+            Math.max(1000, Math.min(MANIFEST_TIMEOUT_MS, deadline - deps.now()))
+          );
+          const type = response.headers.get("content-type") ?? "";
+          if (
+            response.status === 401 ||
+            response.status === 403 ||
+            (response.ok && /text\/html/i.test(type))
+          ) {
+            // Retrying won't change it: the deployment is behind a login.
+            await response.body?.cancel();
+            add(
+              "live/protected",
+              MANIFEST,
+              `${origin}/${MANIFEST} ${response.ok ? "returned an HTML page" : `returned ${response.status}`} instead of the manifest, so the deployment looks protected`,
+              "Vercel Deployment Protection (or Cloudflare Access) may be on. Turn it off for this deployment, then run pnpm check:live again"
+            );
+            return toResult("live", findings);
+          }
           if (!response.ok) {
             seen = {
               kind: "error",
@@ -216,8 +270,21 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
             reason: `could not read ${MANIFEST}: ${(error as Error).message}`,
           };
         }
+        if (seen.kind === "commit" && seen.commit === null) {
+          nullSince ??= deps.now();
+          if (deps.now() - nullSince >= NULL_COMMIT_WAIT_MS) break;
+        } else {
+          nullSince = null;
+        }
         const left = deadline - deps.now();
         if (left <= 0) break;
+        deps.log(
+          `waiting for ${origin} to serve ${head.stdout.slice(0, 7)} (${
+            seen.kind === "commit"
+              ? `it serves ${seen.commit ? seen.commit.slice(0, 7) : "no commit"}`
+              : seen.reason
+          }), ${Math.ceil(left / 1000)}s left`
+        );
         await deps.sleep(Math.min(options.intervalMs, left));
       }
 
@@ -227,7 +294,7 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
           add(
             "live/no-commit",
             MANIFEST,
-            `${origin}/${MANIFEST} has no commit (null) after ${waited}, so it can't be matched to HEAD ${head.stdout}`,
+            `${origin}/${MANIFEST} still has no commit (null) after ${Math.round(NULL_COMMIT_WAIT_MS / 1000)}s, so it can't be matched to HEAD ${head.stdout}`,
             "The build didn't see WORKERS_CI_COMMIT_SHA or VERCEL_GIT_COMMIT_SHA. Deploy through Workers Builds or Vercel from git, not a local upload"
           );
         } else if (seen?.kind === "commit") {
@@ -286,7 +353,7 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
         const target = `${origin}/${file.split("/").map(encodeURIComponent).join("/")}`;
         let response: Response;
         try {
-          response = await request(target);
+          response = await request(target, FILE_TIMEOUT_MS);
         } catch (error) {
           add(
             "live/file-status",
@@ -348,6 +415,7 @@ export async function main(
     },
     sleep: (ms) => Bun.sleep(ms),
     now: () => Date.now(),
+    log: (message) => process.stderr.write(`${message}\n`),
     ...overrides.deps,
   };
   const outcome = await runChecks([makeLive(parsed.options, deps)], {

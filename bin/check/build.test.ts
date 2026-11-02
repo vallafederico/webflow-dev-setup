@@ -8,7 +8,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { build, requireBuild } from "./build";
+import { build, buildBlocked, requireBuild } from "./build";
+import { bundle } from "./bundle";
+import { makeHost } from "./host";
 import { ToolFailure } from "./types";
 
 const REPO = path.resolve(import.meta.dir, "..", "..");
@@ -63,7 +65,7 @@ describe("the build check", () => {
     ).toBe(false);
   });
 
-  test("a failing build is a finding that names the file, and later checks refuse to read dist/", async () => {
+  test("a failing build is a finding that names the file, and later checks report build/blocked, which is exit 1", async () => {
     const root = repo(
       'console.error("error: bad thing in src/modules/x.ts:3"); process.exit(1);',
       { "dist/build-manifest.json": "{}" }
@@ -74,7 +76,14 @@ describe("the build check", () => {
       rule: "build/failed",
       file: "src/modules/x.ts",
     });
-    expect(() => requireBuild(root)).toThrow(ToolFailure);
+    for (const check of [bundle, makeHost()]) {
+      const result = await check.run({ root, all: true });
+      expect(result.ok).toBe(false);
+      expect(result.findings.map((f) => f.rule)).toEqual(["build/blocked"]);
+    }
+    expect(buildBlocked(root, "bundle")?.findings[0]?.message).toContain(
+      "bundle"
+    );
   });
 
   test("exit 0 without a manifest or an entry is still a failure", async () => {

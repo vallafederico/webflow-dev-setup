@@ -2,7 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { exec, excerpt, localBin } from "./tools";
-import { type Check, type Finding, ToolFailure, toResult } from "./types";
+import {
+  type Check,
+  type CheckResult,
+  type Finding,
+  ToolFailure,
+  toResult,
+} from "./types";
 
 /** What the build check saw per repo, so the checks after it know whether dist/ can be trusted. */
 const outcomes = new Map<string, "ok" | "failed">();
@@ -10,26 +16,33 @@ const outcomes = new Map<string, "ok" | "failed">();
 export const MANIFEST_FILE = path.join("dist", "build-manifest.json");
 
 /**
- * Called first by every check that reads dist/. A failed build leaves no
- * output worth reading, and reading an older dist/ would pass code that no
- * longer builds, so it is a tool failure and not a pass.
+ * For a check that reads dist/. When the build failed there is nothing to
+ * read, and reading an older dist/ would pass code that no longer builds. That
+ * is a finding, not a tool failure: the code is what's broken, so it exits 1.
+ */
+export function buildBlocked(root: string, check: string): CheckResult | null {
+  if (outcomes.get(root) !== "failed") return null;
+  return toResult(check, [
+    {
+      rule: "build/blocked",
+      severity: "error",
+      file: "dist",
+      line: 1,
+      message: `the production build failed, so the ${check} check had no dist/ to read`,
+      fix: "Fix the build error the build check reports, then run pnpm check:all again",
+    },
+  ]);
+}
+
+/**
+ * Run on its own, nothing proves dist/ is current. It must at least exist, or
+ * the tool can't do its job, which is a tool failure.
  */
 export function requireBuild(root: string): void {
-  if (outcomes.get(root) === "failed") {
-    throw new ToolFailure(
-      "the production build failed, so there is no dist/ to check",
-      {
-        fix: "Fix the build error the build check reports, then run pnpm check:all again",
-      }
-    );
-  }
-  // Run on its own, nothing here proves dist/ is current. It must at least exist.
   if (!outcomes.has(root) && !existsSync(path.join(root, MANIFEST_FILE))) {
     throw new ToolFailure(
       `${MANIFEST_FILE} is missing, so there is no build to check`,
-      {
-        fix: "Run pnpm build, or run pnpm check:all, which builds first",
-      }
+      { fix: "Run pnpm build, or run pnpm check:all, which builds first" }
     );
   }
 }

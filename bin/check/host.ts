@@ -4,7 +4,7 @@ import { listApiRoutes } from "../generate-worker";
 import { type ProjectConfig, readProjectConfig } from "../project-config";
 import { apiExportProblems } from "./api-exports";
 import { listFiles } from "./bundle";
-import { requireBuild } from "./build";
+import { buildBlocked, requireBuild } from "./build";
 import {
   diffRules,
   parseHeadersFile,
@@ -212,19 +212,33 @@ async function checkCloudflare(
     sandbox.cleanup();
   }
 
-  if (existsSync(path.join(root, "api", "test.ts"))) {
-    const rows: Row[] = await deps.serve(
-      root,
-      listFiles(path.join(root, "dist"))
-    );
-    for (const row of rows.filter((r) => !r.ok)) {
-      add({
-        rule: "host/serving",
-        file: "wrangler.jsonc",
-        message: `wrangler dev: ${row.request} should give ${row.expected}, but gave ${row.actual}`,
-        fix: "Run bun run bin/check/serve-check.ts for the full table, then fix dist/_headers, the Worker router or wrangler.jsonc",
-      });
+  // Static files are always probed. Only the template's own api/test.ts probes
+  // depend on that file, and skipping them is said out loud.
+  const api = existsSync(path.join(root, "api", "test.ts"));
+  if (!api) {
+    add({
+      severity: "warning",
+      rule: "host/serving-skipped",
+      file: "api/test.ts",
+      message:
+        "api/test.ts does not exist, so the /api/test probes (GET, OPTIONS, POST and HEAD) were skipped. Static files and /api/nope were still checked",
+      fix: "Restore api/test.ts from the template if the API routes should be covered by this check",
+    });
+  }
+  const rows: Row[] = await deps.serve(
+    root,
+    listFiles(path.join(root, "dist")),
+    {
+      api,
     }
+  );
+  for (const row of rows.filter((r) => !r.ok)) {
+    add({
+      rule: "host/serving",
+      file: "wrangler.jsonc",
+      message: `wrangler dev: ${row.request} should give ${row.expected}, but gave ${row.actual}`,
+      fix: "Run bun run bin/check/serve-check.ts for the full table, then fix dist/_headers, the Worker router or wrangler.jsonc",
+    });
   }
 }
 
@@ -265,6 +279,8 @@ export function makeHost(
     name: "host",
     tier: "all",
     async run({ root }) {
+      const blocked = buildBlocked(root, "host");
+      if (blocked) return blocked;
       requireBuild(root);
       const findings: Finding[] = [];
       const add = (draft: Draft) =>

@@ -15,7 +15,7 @@ import {
   requireModules,
   taxiPage,
 } from "./runtime-pages";
-import { taxiWiringProblems } from "./runtime";
+import { bootProblems } from "./runtime";
 import { ToolFailure } from "./types";
 
 const dirs: string[] = [];
@@ -98,6 +98,13 @@ describe("pages", () => {
     for (const html of [early, normal]) expect(html).toContain('rel="icon"');
   });
 
+  test("with Taxi on the early script is deferred, as the loader writes it", () => {
+    expect(earlyPage("/app.js", "", true)).toContain(
+      '<script defer src="/app.js">'
+    );
+    expect(earlyPage("/app.js", "")).toContain('<script src="/app.js">');
+  });
+
   test("the editor marker is the first child of body", () => {
     const html = editorPage("/app.js", "");
     expect(html).toMatch(/<body><div class="w-editor-publish-node"><\/div>/);
@@ -131,27 +138,62 @@ describe("pages", () => {
   });
 });
 
-describe("taxiWiringProblems", () => {
-  const wired = {
-    "src/app.ts":
-      'import { Pages } from "@lib/pages";\nclass A { pages = Pages; }',
-    "src/lib/pages.ts": "export const Pages = new _Pages();",
-  };
+describe("bootProblems", () => {
+  const app = (body: string) => ({
+    "src/app.ts": `class A { constructor() {\n${body}\n} }`,
+  });
+  const all = "createCycles(); runPageIn(); runMount();";
 
-  test("a wired project has no problems", () => {
-    expect(taxiWiringProblems(repo(wired))).toEqual([]);
+  test("an app that makes all three calls has no problems", () => {
+    expect(bootProblems(repo(app(all)))).toEqual([]);
   });
 
-  test("the template, with Taxi commented out, lists what's missing", () => {
-    const problems = taxiWiringProblems(
-      repo({
-        "src/app.ts":
-          '// import { Pages } from "@lib/pages";\n  // pages = Pages;',
-        "src/lib/pages.ts": "// export const Pages = new _Pages();",
-      })
+  test.each([
+    ["createCycles", "runPageIn(); runMount();", "no module would start"],
+    [
+      "runPageIn",
+      "createCycles(); runMount();",
+      "onPageIn hooks would never run",
+    ],
+    [
+      "runMount",
+      "createCycles(); runPageIn();",
+      "onMount hooks would never run",
+    ],
+  ])("a missing %s is named with what it would break", (name, body, effect) => {
+    expect(bootProblems(repo(app(body)))).toEqual([
+      `src/app.ts never calls ${name}(), so ${effect}`,
+    ]);
+  });
+
+  test("a call in a comment doesn't count", () => {
+    const problems = bootProblems(
+      repo(
+        app("createCycles(); runPageIn();\n// runMount();\n/* runMount() */")
+      )
     );
-    expect(problems).toHaveLength(3);
-    expect(problems[0]).toContain("src/lib/pages.ts");
-    expect(problems[1]).toContain("pages = Pages");
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("runMount");
+  });
+
+  test("runInitial() counts when src/lib/pages.ts makes the calls", () => {
+    const files = {
+      ...app("runInitial();"),
+      "src/lib/pages.ts": `export function runInitial() { ${all} }`,
+    };
+    expect(bootProblems(repo(files))).toEqual([]);
+    expect(
+      bootProblems(
+        repo({
+          ...files,
+          "src/lib/pages.ts":
+            "export function runInitial() { createCycles(); }",
+        })
+      )
+    ).toHaveLength(2);
+  });
+
+  test("a missing app is reported", () => {
+    expect(bootProblems(repo({}))).toEqual(["src/app.ts does not exist"]);
   });
 });

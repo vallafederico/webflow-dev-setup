@@ -9,6 +9,7 @@
       "!**/dist",
       "!**/.generated",
       "!**/.wrangler",
+      "!**/wrangler.jsonc",
       "!**/bin/check/fixtures",
       "!**/docs",
       "!**/.claude",

@@ -18,6 +18,10 @@ interface World {
   head?: string;
   upstream?: string | null;
   branch?: string;
+  /** HEAD is detached; `remote` is what `git branch -r --contains` prints. */
+  detached?: { remote: string };
+  /** Records progress lines. */
+  logs?: string[];
   /** url -> response factory, or a list of them used in order. */
   routes: Record<string, () => Response | Promise<Response>>;
 }
@@ -85,8 +89,14 @@ function run(
           ? { code: 128, stdout: "" }
           : { code: 0, stdout: `${world.upstream ?? world.head ?? HEAD}\n` };
       }
-      if (key === "rev-parse --abbrev-ref HEAD")
-        return { code: 0, stdout: `${world.branch ?? "main"}\n` };
+      if (key === "symbolic-ref -q HEAD") {
+        return world.detached
+          ? { code: 1, stdout: "" }
+          : { code: 0, stdout: `refs/heads/${world.branch ?? "main"}\n` };
+      }
+      if (key === "branch -r --contains HEAD") {
+        return { code: 0, stdout: world.detached?.remote ?? "" };
+      }
       throw new Error(`unexpected git ${key}`);
     },
     fetch: async (url) => {
@@ -99,6 +109,7 @@ function run(
       clock += ms;
     },
     now: () => clock,
+    log: (message) => world.logs?.push(message),
   };
   return quietMain(argv, { deps, root }).then((result) => ({
     ...result,
@@ -178,15 +189,110 @@ describe("pnpm check:live", () => {
     expect(result.elapsed).toBe(15_000);
   });
 
-  test("a null commit is its own clear finding", async () => {
+  test("a null commit is its own clear finding, after 60s and not the full timeout", async () => {
     const result = await run(
       { routes: { [MANIFEST_URL]: () => manifest(null) } },
-      ["--json", "--timeout", "10"]
+      ["--json", "--timeout", "10m"]
     );
     expect(result.code).toBe(1);
     const [finding] = JSON.parse(result.out).checks[0].findings;
     expect(finding.rule).toBe("live/no-commit");
     expect(finding.message).toContain("null");
+    expect(result.elapsed).toBe(60_000);
+  });
+
+  test("a null commit that becomes the commit before 60s passes", async () => {
+    let calls = 0;
+    const result = await run(
+      {
+        routes: {
+          [MANIFEST_URL]: () => manifest(++calls < 5 ? null : HEAD),
+          ...FILES,
+        },
+      },
+      ["--json"]
+    );
+    expect(result.code).toBe(0);
+  });
+
+  test.each([401, 403])(
+    "a %d for the manifest fails at once as protected",
+    async (status) => {
+      const result = await run(
+        { routes: { [MANIFEST_URL]: () => new Response("", { status }) } },
+        ["--json"]
+      );
+      expect(result.code).toBe(1);
+      const [finding] = JSON.parse(result.out).checks[0].findings;
+      expect(finding.rule).toBe("live/protected");
+      expect(finding.fix).toContain("Deployment Protection");
+      expect(result.elapsed).toBe(0);
+    }
+  );
+
+  test("an HTML page where the manifest should be fails at once as protected", async () => {
+    const result = await run(
+      {
+        routes: {
+          [MANIFEST_URL]: () =>
+            new Response("<html>Log in</html>", {
+              headers: { "content-type": "text/html; charset=utf-8" },
+            }),
+        },
+      },
+      ["--json"]
+    );
+    expect(JSON.parse(result.out).checks[0].findings[0].rule).toBe(
+      "live/protected"
+    );
+    expect(result.elapsed).toBe(0);
+  });
+
+  test("progress goes to the log while waiting", async () => {
+    const logs: string[] = [];
+    await run({ logs, routes: { [MANIFEST_URL]: () => manifest(OLD) } }, [
+      "--json",
+      "--timeout",
+      "12",
+    ]);
+    expect(logs[0]).toContain(`serve ${HEAD.slice(0, 7)}`);
+    expect(logs[0]).toContain(`it serves ${OLD.slice(0, 7)}`);
+    expect(logs.length).toBeGreaterThan(1);
+  });
+
+  test("every request carries an abort signal, which is what stops a stalled server outlasting --timeout", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const root = mkdtempSync(path.join(tmpdir(), "live-check-"));
+    dirs.push(root);
+    let clock = 0;
+    await quietMain(
+      ["--url", "https://acme.example.com", "--timeout", "3", "--json"],
+      {
+        root,
+        deps: {
+          git: async (args) => ({
+            code: 0,
+            stdout:
+              args[0] === "status"
+                ? ""
+                : args[0] === "symbolic-ref"
+                  ? "refs/heads/f\n"
+                  : `${HEAD}\n`,
+          }),
+          log: () => {},
+          fetch: async (_url, options) => {
+            signals.push(options?.signal ?? undefined);
+            return new Response("no", { status: 404 });
+          },
+          sleep: async (ms) => {
+            clock += ms;
+          },
+          now: () => clock,
+        },
+      }
+    );
+    expect(signals.length).toBeGreaterThan(0);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
   });
 
   test("an unreachable deployment fails with the reason", async () => {
@@ -252,10 +358,11 @@ describe("pnpm check:live", () => {
           stdout:
             args[0] === "status"
               ? ""
-              : args.includes("--abbrev-ref")
-                ? "feat\n"
+              : args[0] === "symbolic-ref"
+                ? "refs/heads/feat\n"
                 : `${HEAD}\n`,
         }),
+        log: () => {},
         fetch: async (_url, options) => {
           init = options;
           return manifest(HEAD, {
@@ -319,8 +426,8 @@ describe("pnpm check:live exits 2 without fetching anything", () => {
           stdout:
             a[0] === "status"
               ? ""
-              : a.includes("--abbrev-ref")
-                ? "main\n"
+              : a[0] === "symbolic-ref"
+                ? "refs/heads/main\n"
                 : `${HEAD}\n`,
         }),
       },
@@ -328,10 +435,69 @@ describe("pnpm check:live exits 2 without fetching anything", () => {
     expect(code).toBe(2);
   });
 
+  test("with a --url that has a path or query", async () => {
+    for (const url of [
+      "https://acme.example.com/preview",
+      "https://acme.example.com/?x=1",
+      "https://acme.example.com/#a",
+    ]) {
+      const result = await run({ branch: "f", routes }, [
+        "--url",
+        url,
+        "--json",
+      ]);
+      expect(result.code).toBe(2);
+      expect(result.fetched).toEqual([]);
+      expect(JSON.parse(result.out).checks[0].findings[0].fix).toContain(
+        "--url https://acme.example.com"
+      );
+    }
+  });
+
   test("with a bad --url, --timeout or option", async () => {
     expect((await run({ routes }, ["--url", "not a url"])).code).toBe(2);
     expect((await run({ routes }, ["--timeout", "soon"])).code).toBe(2);
     expect((await run({ routes }, ["--nope"])).code).toBe(2);
+  });
+});
+
+describe("detached HEAD", () => {
+  const preview = "https://feat-acme.team.workers.dev";
+  const routes = {
+    [`${preview}/build-manifest.json`]: () => manifest(HEAD),
+    [`${preview}/app.js`]: ok("text/javascript"),
+    [`${preview}/pages/about.js`]: ok("text/javascript"),
+    [`${preview}/app.css`]: ok("text/css"),
+  };
+
+  test("with --url, a remote branch containing HEAD proves it was pushed", async () => {
+    const result = await run(
+      { detached: { remote: "  origin/feat/x\n" }, routes },
+      ["--url", preview]
+    );
+    expect(result.code).toBe(0);
+  });
+
+  test("with no remote branch containing HEAD it is exit 2 with the right reason", async () => {
+    const result = await run({ detached: { remote: "" }, routes }, [
+      "--url",
+      preview,
+      "--json",
+    ]);
+    expect(result.code).toBe(2);
+    expect(JSON.parse(result.out).checks[0].findings[0].message).toContain(
+      "detached"
+    );
+  });
+
+  test("without --url it still needs the address, and says it's detached", async () => {
+    const result = await run({ detached: { remote: "origin/main" }, routes }, [
+      "--json",
+    ]);
+    expect(result.code).toBe(2);
+    expect(JSON.parse(result.out).checks[0].findings[0].message).toContain(
+      "(detached)"
+    );
   });
 });
 

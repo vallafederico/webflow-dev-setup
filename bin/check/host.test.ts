@@ -74,13 +74,15 @@ function repo(files: Record<string, string | object | null> = {}): string {
 }
 
 const calls: string[] = [];
+let serveOptions: { api?: boolean } | undefined;
 const deps: HostDeps = {
   dryRun: async () => {
     calls.push("dryRun");
     return { ok: true, message: "" };
   },
-  serve: async () => {
+  serve: async (_root, _files, options) => {
     calls.push("serve");
+    serveOptions = options;
     return [];
   },
 };
@@ -161,9 +163,13 @@ describe("host: cloudflare", () => {
     expect(calls).toEqual(["dryRun", "serve"]);
   });
 
-  test("serving is skipped when api/test.ts is absent", async () => {
-    await findings(repo({ "api/test.ts": null }));
-    expect(calls).toEqual(["dryRun"]);
+  test("without api/test.ts static serving still runs, and only the /api/test probes are skipped, with a warning", async () => {
+    const root = repo({ "api/test.ts": null });
+    expect(await summary(root)).toEqual([
+      "warning host/serving-skipped api/test.ts",
+    ]);
+    expect(calls).toEqual(["dryRun", "serve"]);
+    expect(serveOptions).toEqual({ api: false });
   });
 
   test("a wrong name in wrangler.jsonc fails", async () => {

@@ -50,9 +50,23 @@ export const COUNT_ORDER = [
   "Scroll",
   "State",
   "editor",
+  "timers",
+  "listeners",
+  "observers",
 ] as const;
 export type CountName = (typeof COUNT_ORDER)[number];
 export type Counts = Record<CountName, number>;
+
+/**
+ * Counts that some module adds lazily on its first cycle and then keeps flat
+ * (form.ts adds listeners and an observer once), so they are compared with the
+ * first cycle's destroyed count and not with the baseline.
+ */
+export const RELATIVE_COUNTS: readonly CountName[] = [
+  "timers",
+  "listeners",
+  "observers",
+];
 
 export interface CycleCounts {
   mounted: Counts;
@@ -66,6 +80,10 @@ const FIXES: Record<CountName, string> = {
   State: "call State.off with the same handler in onDestroy",
   editor:
     "use onEditor() from @/modules/_ instead of handleEditor, which releases its listener on destroy",
+  timers: "keep the id setInterval returns and call clearInterval in onDestroy",
+  listeners:
+    "call removeEventListener with the same handler on window, document, <html> or <body> in onDestroy",
+  observers: "keep the observer and call disconnect() in onDestroy",
 };
 
 export function leakFix(name: CountName): string {
@@ -80,7 +98,8 @@ export interface CountProblem {
 /**
  * Compares the counts of a full lifecycle, repeated. After destroy every
  * count must be back where it was before the first mount, and a later mount
- * must register exactly what the first one did.
+ * must register exactly what the first one did. The relative counts are
+ * instead held to the first cycle's numbers.
  */
 export function compareCounts(
   baseline: Counts,
@@ -89,20 +108,33 @@ export function compareCounts(
   const problems: CountProblem[] = [];
   const first = cycles[0];
   for (const name of COUNT_ORDER) {
+    const relative = RELATIVE_COUNTS.includes(name);
     let reported = false;
     cycles.forEach((cycle, index) => {
-      if (reported) return;
+      if (reported || !first) return;
+      if (relative) {
+        if (index > 0 && cycle.destroyed[name] !== first.destroyed[name]) {
+          reported = true;
+          problems.push({
+            count: name,
+            message: `${name} count grew from ${first.destroyed[name]} after destroy in cycle 1 to ${cycle.destroyed[name]} after destroy in cycle ${index + 1}, so something added on every mount is never undone`,
+          });
+        } else if (index > 0 && cycle.mounted[name] !== first.mounted[name]) {
+          reported = true;
+          problems.push({
+            count: name,
+            message: `${name} count grew from ${first.mounted[name]} after the first mount to ${cycle.mounted[name]} after mount ${index + 1}`,
+          });
+        }
+        return;
+      }
       if (cycle.destroyed[name] !== baseline[name]) {
         reported = true;
         problems.push({
           count: name,
           message: `${name} count is ${cycle.destroyed[name]} after destroy in cycle ${index + 1}, but ${baseline[name]} before the first mount, so something subscribed on mount was never undone`,
         });
-      } else if (
-        first &&
-        index > 0 &&
-        cycle.mounted[name] !== first.mounted[name]
-      ) {
+      } else if (index > 0 && cycle.mounted[name] !== first.mounted[name]) {
         reported = true;
         problems.push({
           count: name,

@@ -167,13 +167,27 @@ export function toHuman(outcome: RunOutcome): string {
   return `${lines.join("\n")}\n`;
 }
 
+const USAGE = "Usage: pnpm check [--all] [--only <check>] [--json]";
+
 export async function main(argv: string[]): Promise<number> {
-  const known = new Set(["--json", "--all"]);
-  const unknown = argv.filter((arg) => !known.has(arg));
+  let all = false;
+  let json = false;
+  let only: string | undefined;
+  const unknown: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string;
+    if (arg === "--all") all = true;
+    else if (arg === "--json") json = true;
+    else if (arg === "--only") {
+      only = argv[++i];
+      if (!only) {
+        process.stderr.write(`--only needs a check name. ${USAGE}\n`);
+        return 2;
+      }
+    } else unknown.push(arg);
+  }
   if (unknown.length > 0) {
-    process.stderr.write(
-      `Unknown option ${unknown.join(" ")}. Usage: pnpm check [--all] [--json]\n`
-    );
+    process.stderr.write(`Unknown option ${unknown.join(" ")}. ${USAGE}\n`);
     return 2;
   }
   if (process.env[NESTED_ENV]) {
@@ -182,8 +196,22 @@ export async function main(argv: string[]): Promise<number> {
     );
     return 2;
   }
+  const root = path.resolve(import.meta.dir, "..", "..");
 
-  const all = argv.includes("--all");
+  // One check on its own, such as `pnpm check:runtime`. Same output and exit codes.
+  if (only) {
+    const check = registry.find((candidate) => candidate.name === only);
+    if (!check) {
+      process.stderr.write(
+        `No check named ${only}. They are: ${registry.map((c) => c.name).join(", ")}\n`
+      );
+      return 2;
+    }
+    const outcome = await runChecks([check], { root, all: true });
+    process.stdout.write(json ? toJson(outcome) : toHuman(outcome));
+    return exitCodeFor(outcome);
+  }
+
   // Without any tier "all" check, --all would run only the fast ones and
   // still read as the full pass agents rely on before finishing.
   if (all && !registry.some((check) => check.tier === "all")) {
@@ -192,7 +220,6 @@ export async function main(argv: string[]): Promise<number> {
     );
     return 2;
   }
-  const root = path.resolve(import.meta.dir, "..", "..");
   const selected = registry.filter((check) => all || check.tier === "fast");
   // The fast checks are independent. The rest build and read dist/, so they
   // run after them, one at a time and in registry order.
@@ -209,9 +236,7 @@ export async function main(argv: string[]): Promise<number> {
     results: [...fast.results, ...slow.results],
     failures: new Map([...fast.failures, ...slow.failures]),
   };
-  process.stdout.write(
-    argv.includes("--json") ? toJson(outcome) : toHuman(outcome)
-  );
+  process.stdout.write(json ? toJson(outcome) : toHuman(outcome));
   return exitCodeFor(outcome);
 }
 

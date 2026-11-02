@@ -154,9 +154,30 @@ describe("bundle", () => {
       )
     );
     expect([...secrets]).toEqual([
-      ["MY_SECRET", "bbbbbbbbbbbbbbbbbbbb"],
-      ["SOME_API_KEY", "cccccccccccccccc"],
+      [".env:MY_SECRET", "bbbbbbbbbbbbbbbbbbbb"],
+      [".env:SOME_API_KEY", "cccccccccccccccc"],
     ]);
+  });
+
+  test("the same name in two env files is two secrets, and both are looked for", async () => {
+    const root = repo(
+      {
+        "a.js": "const a = 'first-value-first-value'",
+        "b.js": "const b = 'second-value-second-val'",
+      },
+      { env: "MY_TOKEN=first-value-first-value\n" }
+    );
+    writeFileSync(
+      path.join(root, ".env.production"),
+      "MY_TOKEN=second-value-second-val\n"
+    );
+    const result = await run(root);
+    expect(result.findings.map((f) => `${f.file} ${f.message}`).sort()).toEqual(
+      [
+        "dist/a.js dist/a.js contains the value of MY_TOKEN from .env",
+        "dist/b.js dist/b.js contains the value of MY_TOKEN from .env.production",
+      ]
+    );
   });
 
   test("no .env means nothing to scan for", async () => {

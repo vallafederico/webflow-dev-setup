@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { localBin } from "./tools";
+import { onTerminate } from "./cleanup";
+import { localBin, toolTimeoutMs } from "./tools";
 import { ToolFailure } from "./types";
 import { addServingFixtures, makeSandbox, wranglerEnv } from "./wrangler";
 
@@ -31,7 +32,7 @@ export interface Row {
 const CORS: HeaderRule = { name: "access-control-allow-origin", equals: "*" };
 
 /** Done check 4 of Part 1, as data. `pages` is the page entry to request. */
-export function probes(pages: string | null): Probe[] {
+export function probes(pages: string | null, api = true): Probe[] {
   return [
     { method: "GET", path: "/app.js", status: 200, headers: [CORS] },
     ...(pages
@@ -52,23 +53,28 @@ export function probes(pages: string | null): Probe[] {
     { method: "GET", path: "/_headers", status: 404 },
     { method: "GET", path: "/nope.js", status: 404 },
     { method: "GET", path: "/api/nope", status: 404 },
-    {
-      method: "GET",
-      path: "/api/test",
-      status: 200,
-      headers: [{ name: "content-type", startsWith: "application/json" }],
-      json: true,
-    },
-    {
-      method: "OPTIONS",
-      path: "/api/test",
-      status: 200,
-      headers: [CORS, { name: "access-control-allow-methods", present: true }],
-    },
-    { method: "POST", path: "/api/test", status: 405 },
-    { method: "HEAD", path: "/api/test", status: 405 },
+    ...(api ? API_PROBES : []),
   ];
 }
+
+/** Probes of the template's api/test.ts. Skipped when a project deleted it. */
+const API_PROBES: Probe[] = [
+  {
+    method: "GET",
+    path: "/api/test",
+    status: 200,
+    headers: [{ name: "content-type", startsWith: "application/json" }],
+    json: true,
+  },
+  {
+    method: "OPTIONS",
+    path: "/api/test",
+    status: 200,
+    headers: [CORS, { name: "access-control-allow-methods", present: true }],
+  },
+  { method: "POST", path: "/api/test", status: 405 },
+  { method: "HEAD", path: "/api/test", status: 405 },
+];
 
 function describeRule(rule: HeaderRule): string {
   if ("equals" in rule) return `${rule.name}: ${rule.equals}`;
@@ -151,46 +157,63 @@ async function startDev(root: string, sandbox: string) {
     }
   );
 
+  const stop = async () => {
+    forget();
+    proc.kill();
+    // wrangler stops its workerd child on SIGTERM; a wrangler that ignores it is killed.
+    const force = setTimeout(() => proc.kill(9), 3000);
+    await proc.exited;
+    clearTimeout(force);
+  };
+  const forget = onTerminate(() => {
+    proc.kill();
+  });
+
   let log = "";
   const decoder = new TextDecoder();
-  const origin = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () =>
+  const readyTimeout = Math.min(READY_TIMEOUT_MS, toolTimeoutMs());
+  let origin: string;
+  try {
+    origin = await waitUntilReady();
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+  return { origin, stop };
+
+  function waitUntilReady() {
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new ToolFailure(
+              `wrangler dev was not ready after ${Math.round(readyTimeout / 1000)}s: ${tail(log)}`
+            )
+          ),
+        readyTimeout
+      );
+      const pump = async (stream: ReadableStream<Uint8Array>) => {
+        for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
+          log += decoder.decode(chunk);
+          const ready = /Ready on (http:\/\/[\d.]+:\d+)/.exec(log);
+          if (ready) {
+            clearTimeout(timer);
+            resolve(ready[1] as string);
+          }
+        }
+      };
+      void pump(proc.stdout as ReadableStream<Uint8Array>);
+      void pump(proc.stderr as ReadableStream<Uint8Array>);
+      void proc.exited.then((code) => {
+        clearTimeout(timer);
         reject(
           new ToolFailure(
-            `wrangler dev was not ready after ${READY_TIMEOUT_MS / 1000}s: ${tail(log)}`
+            `wrangler dev exited with ${code} before it was ready: ${tail(log)}`
           )
-        ),
-      READY_TIMEOUT_MS
-    );
-    const pump = async (stream: ReadableStream<Uint8Array>) => {
-      for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
-        log += decoder.decode(chunk);
-        const ready = /Ready on (http:\/\/[\d.]+:\d+)/.exec(log);
-        if (ready) {
-          clearTimeout(timer);
-          resolve(ready[1] as string);
-        }
-      }
-    };
-    void pump(proc.stdout as ReadableStream<Uint8Array>);
-    void pump(proc.stderr as ReadableStream<Uint8Array>);
-    void proc.exited.then((code) => {
-      clearTimeout(timer);
-      reject(
-        new ToolFailure(
-          `wrangler dev exited with ${code} before it was ready: ${tail(log)}`
-        )
-      );
+        );
+      });
     });
-  });
-  return {
-    origin,
-    async stop() {
-      proc.kill();
-      await proc.exited;
-    },
-  };
+  }
 }
 
 function tail(log: string): string {
@@ -215,7 +238,8 @@ export function pickPage(distFiles: string[]): string | null {
  */
 export async function runServeChecks(
   root: string,
-  distFiles: string[]
+  distFiles: string[],
+  options: { api?: boolean } = {}
 ): Promise<Row[]> {
   for (const needed of [
     "wrangler.jsonc",
@@ -237,7 +261,7 @@ export async function runServeChecks(
     const dev = await startDev(root, sandbox.dir);
     try {
       const rows: Row[] = [];
-      for (const probe of probes(pickPage(distFiles)))
+      for (const probe of probes(pickPage(distFiles), options.api ?? true))
         rows.push(await runProbe(dev.origin, probe));
       return rows;
     } finally {
@@ -269,7 +293,13 @@ if (import.meta.main) {
   const root = path.resolve(import.meta.dir, "..", "..");
   const { listFiles } = await import("./bundle");
   try {
-    const rows = await runServeChecks(root, listFiles(path.join(root, "dist")));
+    const rows = await runServeChecks(
+      root,
+      listFiles(path.join(root, "dist")),
+      {
+        api: existsSync(path.join(root, "api", "test.ts")),
+      }
+    );
     process.stdout.write(formatTable(rows));
     process.exit(rows.every((row) => row.ok) ? 0 : 1);
   } catch (error) {

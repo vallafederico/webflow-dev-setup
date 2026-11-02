@@ -199,3 +199,10 @@ describe("sequential tier", () => {
     expect(exitCodeFor(outcome)).toBe(2);
   });
 });
+
+describe("--only", () => {
+  test("a name that isn't a check is a usage error", async () => {
+    expect(await main(["--only", "nope"])).toBe(2);
+    expect(await main(["--only"])).toBe(2);
+  });
+});

@@ -104,7 +104,8 @@ describe("the documented JSON command", () => {
 
   test("--all in a repo that can't build is exit 2, never a pass", () => {
     // The stripped repo has no bin/build.ts, so the build check fails and
-    // bundle and host have no dist/ to read.
+    // bundle and host are blocked. It has no modules either, which stops the
+    // browser run: a tool failure.
     const run = documented(makeRepo({}), "--all", "--json");
     expect(run.code).toBe(2);
     const checks = JSON.parse(run.stdout).checks as {

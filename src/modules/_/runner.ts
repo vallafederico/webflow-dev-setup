@@ -72,10 +72,12 @@ export function onPageOut(
   }
 }
 
+/** Resolves when every hook has settled, with each hook's outcome so a caller can see one that threw. */
 export async function runPageOut() {
-  await Promise.allSettled(pageOut.map((fn) => fn()));
+  const results = await Promise.allSettled(pageOut.map((fn) => fn()));
   pageOut.length = 0;
   //   console.log("page -> []", page);
+  return results;
 }
 
 export function onPageIn(fn: () => Promise<void>) {
@@ -83,8 +85,9 @@ export function onPageIn(fn: () => Promise<void>) {
 }
 
 export async function runPageIn() {
-  await Promise.allSettled(pageIn.map((fn) => fn()));
+  const results = await Promise.allSettled(pageIn.map((fn) => fn()));
   pageIn.length = 0;
+  return results;
 }
 
 export function onView(

@@ -175,3 +175,6 @@ certs/
 # Cloudflare
 .generated
 .wrangler
+
+# macOS marker that keeps Spotlight out of a folder
+.metadata_never_index

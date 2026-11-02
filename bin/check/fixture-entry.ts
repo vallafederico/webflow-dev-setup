@@ -16,22 +16,17 @@ import State from "@lib/hey";
 import { Scroll } from "@lib/scroll";
 import { Raf, Resize } from "@lib/subs";
 import { editorListenerCount } from "@webflow/detect-editor";
-import type { FixtureApi } from "./runtime-rules";
+import type { Counts, FixtureApi } from "./runtime-rules";
 
-// runPageIn and runPageOut wait on Promise.allSettled, which swallows a hook
-// that throws. Say so on the console, where the browser run reads it.
-const allSettled = Promise.allSettled.bind(
-  Promise
-) as typeof Promise.allSettled;
-Promise.allSettled = (async (values: Iterable<unknown>) => {
-  const results = await allSettled(values);
-  for (const result of results) {
+// runPageIn and runPageOut settle every hook, so a hook that throws is only
+// visible in their results. Say so on the console, where the browser run reads it.
+async function report(settled: Promise<PromiseSettledResult<void>[]>) {
+  for (const result of await settled) {
     if (result.status === "rejected") {
       console.error(`a page hook rejected: ${String(result.reason)}`);
     }
   }
-  return results;
-}) as typeof Promise.allSettled;
+}
 
 declare global {
   interface Window {
@@ -46,13 +41,18 @@ const root = () => {
 };
 
 window.__wdsCheck = {
-  counts: () => ({
-    Raf: Raf.count(),
-    Resize: Resize.count(),
-    Scroll: Scroll.count(),
-    State: State.count(),
-    editor: editorListenerCount(),
-  }),
+  counts: () =>
+    ({
+      // Set by the leak test's init script, which is not part of any bundle.
+      ...(
+        window as unknown as { __wdsCounters?: () => object }
+      ).__wdsCounters?.(),
+      Raf: Raf.count(),
+      Resize: Resize.count(),
+      Scroll: Scroll.count(),
+      State: State.count(),
+      editor: editorListenerCount(),
+    }) as Counts,
   setFixture: (html) => {
     root().innerHTML = html;
   },
@@ -65,8 +65,8 @@ window.__wdsCheck = {
       .map((element) => element.dataset.module ?? "");
     return { called, uninitialized };
   },
-  pageIn: () => runPageIn(),
+  pageIn: () => report(runPageIn()),
   mount: () => runMount(),
-  pageOut: () => runPageOut(),
+  pageOut: () => report(runPageOut()),
   destroy: () => runDestroy(),
 };

@@ -25,6 +25,7 @@ This project is a custom development environment for Webflow, using a modular Ja
 
 - `pnpm check` after every change. It has no network and is fast.
 - `pnpm check:all` before saying work is done, and report its result. It adds the production build, bundle and host checks, and the browser run.
+- `pnpm check:all` replaces `dist/` with a production build, so restart `pnpm dev` or edit a file to get its live reload back.
 - `pnpm check:live` after a push, to compare the deployed files with the commit.
 - `pnpm fix` applies the safe autofixes (formatting, import paths).
 - `./node_modules/.bin/bun run bin/check/index.ts --json` gives machine-readable output. Add `--all` for the `check:all` set.

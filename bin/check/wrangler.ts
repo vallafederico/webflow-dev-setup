@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { onTerminate } from "./cleanup";
 import { exec, excerpt, localBin } from "./tools";
 
 /**
@@ -33,7 +34,15 @@ export function makeSandbox(root: string): { dir: string; cleanup(): void } {
     const from = path.join(root, name);
     if (existsSync(from)) symlinkSync(from, path.join(dir, name));
   }
-  return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  const remove = () => rmSync(dir, { recursive: true, force: true });
+  const forget = onTerminate(remove);
+  return {
+    dir,
+    cleanup: () => {
+      forget();
+      remove();
+    },
+  };
 }
 
 /** No account tokens, so a check can never reach a real account, and no telemetry. */

@@ -21,6 +21,12 @@ describe("serving probes", () => {
     ]);
   });
 
+  test("without the api option the /api/test probes go and /api/nope stays", () => {
+    const paths = probes("pages/about.js", false).map((p) => p.path);
+    expect(paths).toContain("/api/nope");
+    expect(paths).not.toContain("/api/test");
+  });
+
   test("a project with no page entry skips only the page probe", () => {
     expect(probes(null).some((p) => p.path.startsWith("/pages/"))).toBe(false);
   });
