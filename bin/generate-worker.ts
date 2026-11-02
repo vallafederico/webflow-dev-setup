@@ -7,12 +7,20 @@ export const WORKER_FILE = join(".generated", "worker.ts");
 /** The router answers only these. `Object.hasOwn` alone would let a module export named `constructor` through. */
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
+/** Files that are never routes: helpers (`_x.ts`), dotfiles, tests and type declarations. */
+const isRouteFile = (name: string) =>
+  name.endsWith(".ts") &&
+  !name.startsWith("_") &&
+  !name.startsWith(".") &&
+  !name.endsWith(".test.ts") &&
+  !name.endsWith(".d.ts");
+
 /** Top-level `api/*.ts`, the same files `bin/api.ts` serves. Subfolders hold shared helpers. */
 export async function listApiRoutes(apiDir: string): Promise<string[]> {
   if (!existsSync(apiDir)) return [];
   const entries = await readdir(apiDir, { withFileTypes: true });
   return entries
-    .filter((e) => e.isFile() && e.name.endsWith(".ts") && !e.name.endsWith(".d.ts"))
+    .filter((e) => e.isFile() && isRouteFile(e.name))
     .map((e) => e.name.slice(0, -".ts".length))
     .sort();
 }

@@ -114,6 +114,39 @@ export async function POST(request: Request) { return new Response(await request
     }
   });
 
+  test("helpers, dotfiles, tests and declarations are not routes", async () => {
+    const handler = "export const GET = () => new Response('x');";
+    api({
+      "a.ts": handler,
+      "_shared.ts": handler,
+      ".hidden.ts": handler,
+      "foo.test.ts": "import { test } from 'bun:test'; test('x', () => {});",
+      "b.d.ts": "export {};",
+      "notes.md": "x",
+    });
+    expect(await listApiRoutes(join(dir, "api"))).toEqual(["a"]);
+    const worker = await load();
+    expect(readFileSync(join(dir, ".generated", "worker.ts"), "utf8")).not.toContain("foo.test");
+    expect((await call(worker, "/api/a")).status).toBe(200);
+    for (const path of ["/api/_shared", "/api/.hidden", "/api/foo.test", "/api/foo"]) {
+      expect((await call(worker, path)).status).toBe(404);
+    }
+  });
+
+  test("HEAD is 405 unless the route exports HEAD, with no GET fallback", async () => {
+    api({
+      "get.ts": "export const GET = () => new Response('x');",
+      "head.ts": "export const HEAD = () => new Response(null, { headers: { 'x-head': '1' } });",
+    });
+    const worker = await load();
+    const noHead = await call(worker, "/api/get", "HEAD");
+    expect(noHead.status).toBe(405);
+    expect(noHead.headers.get("allow")).toBe("GET");
+    const withHead = await call(worker, "/api/head", "HEAD");
+    expect(withHead.status).toBe(200);
+    expect(withHead.headers.get("x-head")).toBe("1");
+  });
+
   test("only top-level .ts files become routes", async () => {
     api({
       "a.ts": "export const GET = () => new Response('a');",
