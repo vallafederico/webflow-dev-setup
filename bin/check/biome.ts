@@ -44,6 +44,20 @@ export async function runBiomeReport(
     throw new ToolFailure(`biome ${args[0]} returned an unexpected report`);
   }
 
+  // Biome failed (exit 2+, or 1 with nothing to show for it) without pointing
+  // at any file: it didn't check the code.
+  const located = report.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.location?.path &&
+      (diagnostic.severity === "error" || diagnostic.severity === "fatal")
+  );
+  if (result.code !== 0 && !located) {
+    throw new ToolFailure(
+      `biome ${args[0]} exited ${result.code} but reported no error in any file: ${excerpt(result.stderr || result.stdout)}`,
+      { file: "biome.json" }
+    );
+  }
+
   // Anything that isn't about the code itself, such as a configuration or
   // internal error, means the tool is broken.
   for (const diagnostic of report.diagnostics) {

@@ -2,15 +2,16 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runBiomeReport } from "./biome";
 import { analyzeRoot, applyEdits, type Edit } from "./house-rules";
-import { biomeScope } from "./scope";
 import { ToolFailure } from "./types";
 
 /**
  * Applies the fixes that can't change behaviour: import paths, Biome's safe
- * lint fixes and formatting. Files outside Biome's scope are never touched.
+ * lint fixes and formatting. Only .ts and .js files, which Biome formats, are touched.
  */
 export async function fix(root: string) {
-  const inScope = biomeScope(root);
+  // Biome formats these. The house rules also scan .tsx and .mjs, which Biome
+  // doesn't touch, so import fixes stay out of them too.
+  const inScope = (file: string) => /\.(ts|js)$/.test(file);
 
   // Import paths first, because the formatter runs last and settles the layout.
   const byFile = new Map<string, Edit[]>();

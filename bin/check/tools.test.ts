@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -15,7 +16,6 @@ import { format, lint } from "./biome";
 import { fix } from "./fix";
 import { analyzeSource } from "./house-rules";
 import { skills } from "./skills";
-import { biomeScope } from "./scope";
 import { types } from "./tsc";
 import { ToolFailure } from "./types";
 import { findDrift, syncSkills } from "../sync-skills";
@@ -55,6 +55,17 @@ describe("Biome", () => {
   test("an invalid biome.json is a tool failure, not a pass", async () => {
     const root = makeRepo({ "src/a.ts": "export const a = 1;\n" });
     writeFileSync(path.join(root, "biome.json"), '{ "linter": { "nope": 1 } }');
+    await expect(format.run(ctx(root))).rejects.toBeInstanceOf(ToolFailure);
+    await expect(lint.run(ctx(root))).rejects.toBeInstanceOf(ToolFailure);
+  });
+
+  test("a non-zero exit with no error in any file is a tool failure", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "check-fake-biome-"));
+    created.push(root);
+    mkdirSync(path.join(root, "node_modules", ".bin"), { recursive: true });
+    const fake = path.join(root, "node_modules", ".bin", "biome");
+    writeFileSync(fake, "#!/bin/sh\necho '{\"diagnostics\":[]}'\nexit 1\n");
+    chmodSync(fake, 0o755);
     await expect(format.run(ctx(root))).rejects.toBeInstanceOf(ToolFailure);
     await expect(lint.run(ctx(root))).rejects.toBeInstanceOf(ToolFailure);
   });
@@ -141,6 +152,39 @@ describe("skills", () => {
     ]);
   });
 
+  test("an extra copy is an error, not a warning", async () => {
+    const root = skillRepo("a", {
+      ".codex/skills": "a",
+      ".cursor/skills": "a",
+    });
+    writeFileSync(path.join(root, ".cursor/skills/one/old.md"), "stale");
+    const result = await skills.run(ctx(root));
+    expect(result.ok).toBe(false);
+    expect(result.findings[0]).toMatchObject({
+      rule: "skills/extra",
+      severity: "error",
+    });
+  });
+
+  test("an empty or missing source is a tool failure", async () => {
+    const root = skillRepo("a", {
+      ".codex/skills": "a",
+      ".cursor/skills": "a",
+    });
+    rmSync(path.join(root, ".claude"), { recursive: true });
+    await expect(skills.run(ctx(root))).rejects.toBeInstanceOf(ToolFailure);
+  });
+
+  test("a .DS_Store is not a skill file", async () => {
+    const root = skillRepo("a", {
+      ".codex/skills": "a",
+      ".cursor/skills": "a",
+    });
+    writeFileSync(path.join(root, ".claude/skills/one/.DS_Store"), "x");
+    writeFileSync(path.join(root, ".codex/skills/one/.DS_Store"), "y");
+    expect((await skills.run(ctx(root))).findings).toEqual([]);
+  });
+
   test("a missing copy and an orphan are told apart, and sync fixes the first", () => {
     const root = skillRepo("a", { ".codex/skills": "a" });
     writeFileSync(path.join(root, ".codex/skills/one/old.md"), "stale");
@@ -155,22 +199,6 @@ describe("skills", () => {
     expect(syncSkills(root)).toEqual([".cursor/skills/one/SKILL.md"]);
     expect(findDrift(root).map((d) => d.kind)).toEqual(["extra"]);
     expect(syncSkills(root)).toEqual([]);
-  });
-});
-
-describe("biome scope", () => {
-  const inScope = biomeScope(REPO);
-  test("follows biome.json", () => {
-    expect(inScope("src/modules/nav.ts")).toBe(true);
-    expect(inScope("src/styles/app.css")).toBe(true);
-    expect(inScope("bin/check/index.ts")).toBe(true);
-    expect(inScope("bin/check/fixtures/house-rules/a/fail/src/x.ts")).toBe(
-      false
-    );
-    expect(inScope("dist/app.js")).toBe(false);
-    expect(inScope("docs/a.ts")).toBe(false);
-    expect(inScope(".claude/skills/a/b.ts")).toBe(false);
-    expect(inScope("README.md")).toBe(false);
   });
 });
 

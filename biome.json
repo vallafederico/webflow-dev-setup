@@ -37,7 +37,12 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
+      "complexity": {
+        "useArrowFunction": { "level": "warn", "fix": "none" }
+      },
       "suspicious": {
+        "noFocusedTests": "error",
+        "noSkippedTests": "error",
         "noExplicitAny": "off",
         "useIterableCallbackReturn": "off",
         "noAssignInExpressions": "off"

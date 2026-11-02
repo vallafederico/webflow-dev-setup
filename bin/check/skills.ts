@@ -14,7 +14,7 @@ export const skills: Check = {
   async run({ root }) {
     const findings: Finding[] = findDrift(root).map((item) => ({
       rule: `skills/${item.kind === "different" ? "drift" : item.kind}`,
-      severity: item.kind === "extra" ? "warning" : "error",
+      severity: "error",
       file: item.file,
       line: 1,
       message: `${item.file} ${MESSAGES[item.kind]}`,
