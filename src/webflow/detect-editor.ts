@@ -58,6 +58,11 @@ export function handleEditor(onEditorView: EditorListener | null = null) {
   return isEditor;
 }
 
+/** Live editor listener count, for leak checks. */
+export function editorListenerCount() {
+  return listeners.size;
+}
+
 /** Drop a listener registered via {@link handleEditor}. */
 export function releaseEditor(onEditorView: EditorListener) {
   listeners.delete(onEditorView);

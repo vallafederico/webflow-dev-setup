@@ -233,6 +233,10 @@ class SimpleEmitter {
 
     this.events[event].forEach((handler) => handler(data));
   }
+
+  count(): number {
+    return Object.values(this.events).reduce((n, list) => n + list.length, 0);
+  }
 }
 
 /**
@@ -448,6 +452,14 @@ class State {
    */
   static off(event: string, handler: EventHandler): void {
     this.emitter.off(event, handler);
+  }
+
+  /**
+   * Total listeners across all events, for leak checks. A method rather than a
+   * getter: the proxy `get` trap binds anything it finds on State.
+   */
+  static count(): number {
+    return this.emitter.count();
   }
 }
 
