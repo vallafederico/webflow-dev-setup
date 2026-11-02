@@ -47,8 +47,10 @@ export function runMount() {
  * directly in a module, which would leave the listener behind.
  */
 export function onEditor(fn: (isEditor: boolean) => void) {
-  handleEditor(fn);
+  // Register the release first: if `fn` throws on its first call, the listener
+  // is already added and must still be released.
   onDestroy(() => releaseEditor(fn));
+  handleEditor(fn);
 }
 
 /** -- <animation> */

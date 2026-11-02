@@ -456,7 +456,8 @@ class State {
 
   /**
    * Total listeners across all events, for leak checks. A method rather than a
-   * getter: the proxy `get` trap binds anything it finds on State.
+   * getter: the proxy `get` trap binds anything it finds on State. For the same
+   * reason `count` can't be used as a state key.
    */
   static count(): number {
     return this.emitter.count();

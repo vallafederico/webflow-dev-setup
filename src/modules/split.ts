@@ -53,8 +53,8 @@ export default function Split(element: HTMLElement) {
     },
   });
 
-  // The editor shows the text as designed, so stop observing, kill the motion
-  // and clear the offset the out-of-view state sets on the chars.
+  // No motion in the editor: stop observing, kill the tweens and clear the
+  // offset the out-of-view state sets on the chars. The text stays split.
   onEditor((isEditor) => {
     if (isEditor) {
       observer.stop();

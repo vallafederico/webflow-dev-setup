@@ -25,19 +25,22 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
   State.on("SOMETHING", onSomething);
 
-  // The editor shows the element as designed, so skip the motion and drop
-  // whatever inline state an earlier tween left behind.
+  // The editor shows the element as designed, so skip the motion and drop the
+  // inline state our tweens left behind. Finish tweens rather than kill them:
+  // a killed tween never resolves, which would hang the page hooks awaiting it.
   let isEditor = false;
+  let animated = false;
   onEditor((value) => {
     isEditor = value;
-    if (!isEditor) return;
-    gsap.killTweensOf(element);
+    if (!isEditor || !animated) return;
+    gsap.getTweensOf(element).forEach((tween) => tween.progress(1));
     gsap.set(element, { clearProps: "backgroundColor,opacity,visibility" });
   });
 
   onPageIn(async () => {
     if (isEditor) return;
     // console.log("onPageIn");
+    animated = true;
     await gsap.to(element, {
       duration: 0.2,
       backgroundColor: "green",
@@ -48,10 +51,12 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
     async () => {
       if (isEditor) return;
       // console.log("onPageOut");
+      animated = true;
       await gsap.to(element, {
         duration: 1,
         backgroundColor: "blue",
       });
+      if (isEditor) return;
 
       await gsap.to(element, {
         duration: 1,
