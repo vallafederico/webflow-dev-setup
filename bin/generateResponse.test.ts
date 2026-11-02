@@ -352,6 +352,37 @@ describe("loader localhost", () => {
   });
 });
 
+describe("loader before pnpm connect", () => {
+  const loader = generateLoaderScript("app.js", [], ["app.css"], "", LOC, "");
+  const urls = (run: ReturnType<typeof runLoader>) =>
+    run.appended.map((el) => el.src ?? el.href);
+
+  test("on a desktop it loads only from localhost, with nothing to preload", () => {
+    const run = runLoader(loader, { coarse: false });
+    expect(urls(run)).toEqual([`${LOC}/app.css`, `${LOC}/app.js`]);
+    expect(run.warnings).toHaveLength(0);
+  });
+
+  test("when localhost is down it requests nothing from the site and warns", () => {
+    const run = runLoader(loader, { coarse: false });
+    const before = run.appended.length;
+    for (const el of [...run.appended]) run.fail(el);
+    expect(run.appended).toHaveLength(before);
+  });
+
+  test("a phone or a published domain loads nothing and warns", () => {
+    for (const opts of [
+      { coarse: true },
+      { coarse: false, host: "www.acme.com" },
+    ]) {
+      const run = runLoader(loader, opts);
+      expect(run.appended).toHaveLength(0);
+      expect(run.written).toHaveLength(0);
+      expect(run.warnings).toHaveLength(1);
+    }
+  });
+});
+
 describe("dev index", () => {
   let dir: string;
   let cwd: string;
@@ -387,10 +418,11 @@ describe("dev index", () => {
     expect(html).not.toContain("pnpm connect");
   });
 
-  test("without a config there is no loader and a connect notice", async () => {
+  test("without a config there is a local-only loader and a connect notice", async () => {
     const html = await index();
-    expect(html).not.toContain("Loader Script");
-    expect(html).not.toContain("PREVIEW_HOST");
+    expect(html).toContain("Loader Script (local only)");
+    expect(html).toContain("click to copy");
+    expect(html).toContain("var DEP = &quot;&quot;;");
     expect(html).toContain("pnpm connect");
     expect(html).not.toContain("VERCEL_URL");
   });

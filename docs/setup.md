@@ -39,4 +39,4 @@ pnpm i
 pnpm dev
 ```
 
-`pnpm dev` runs without any account. Open `http://localhost:6545`: it shows a notice to run `pnpm connect` until you've picked a host. Do that when you're ready to deploy: [Hosting](./hosting.md).
+`pnpm dev` runs without any account. Open `http://localhost:6545`: it has a **Loader Script (local only)** box to click, copy and paste into Webflow, so you can start building straight away. Before you publish, run `pnpm connect` and paste the full loader over it: [Hosting](./hosting.md).

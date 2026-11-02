@@ -22,13 +22,13 @@ pnpm dev
 
 Use pnpm for every command, not Bun. `pnpm i` installs the Bun version the project builds with, and the pnpm scripts call it, so you don't need a global Bun. Don't run `bun install`: it breaks `node_modules` ([why, and how to recover](./docs/setup.md#use-pnpm-not-bun)).
 
-`pnpm dev` works straight away, with no accounts. Its index page (`http://localhost:6545`) shows a "run `pnpm connect`" notice until you pick a host. When you're ready to deploy, choose Cloudflare or Vercel:
+`pnpm dev` works straight away, with no accounts. Its index page (`http://localhost:6545`) has a **Loader Script (local only)** box: click to copy it, paste it into Webflow, and start building against your dev server. It only works on `.webflow.io` on a desktop. When you're ready to deploy, choose Cloudflare or Vercel:
 
 ```bash
 pnpm connect cloudflare   # or: pnpm connect vercel
 ```
 
-See [Hosting](./docs/hosting.md) for the flags and the dashboard steps. Once connected, the same page prints the loader script to paste into Webflow.
+See [Hosting](./docs/hosting.md) for the flags and the dashboard steps. Once connected, the same page shows the full loader. Paste it over the local one before you publish, or the published site gets no JS or CSS.
 
 ## Features
 

@@ -60,7 +60,7 @@ Host settings live in `project.config.json`, committed and written by `pnpm conn
 | `mediaUrl` | R2 media origin, or `null` |
 | `previewHostSuffix` | Hosts ending in this are accepted as branch previews (`?js=`, `?css=`) |
 
-An unconnected project has no file. `pnpm dev` still works, and its index page shows a "run `pnpm connect`" notice instead of the loader. A production build with no file warns, fails on Workers Builds, and on Vercel falls back to the `VERCEL_URL` that Vercel sets itself. An invalid file fails a production build.
+An unconnected project has no file. `pnpm dev` still works, and its index page shows a local-only loader, which loads from the dev server and has no deployment to fall back to, with a notice to run `pnpm connect`. A production build with no file warns, fails on Workers Builds, and on Vercel falls back to the `VERCEL_URL` that Vercel sets itself. An invalid file fails a production build.
 
 ## Environment Variables
 

@@ -35,6 +35,10 @@ export function generateLoaderScript(
 
   const fallback = appJs ? `"${appJs}"` : "null";
 
+  // With no host yet there is no deployment to fall back to, and an empty DEP
+  // would request /app.js from the Webflow site itself.
+  const connected = deployUrl !== "";
+
   // Classic (non-module) scripts do not need crossOrigin to run, so it is not
   // set. Localhost is only reachable from the machine running `pnpm dev` — phones
   // viewing webflow.io must skip it or they race a failed request every load.
@@ -124,15 +128,21 @@ ${
 }
 
   function loadFromDeploy(){
-    if(CSS_DEP!=="none") css.forEach(function(f){ loadCSS((CSS_DEP || DEP)+"/"+f); });
-    if(js && JS_DEP!=="none") deferScript((JS_DEP || DEP)+"/"+js);
+${
+  connected
+    ? `    if(CSS_DEP!=="none") css.forEach(function(f){ loadCSS((CSS_DEP || DEP)+"/"+f); });
+    if(js && JS_DEP!=="none") deferScript((JS_DEP || DEP)+"/"+js);`
+    : `    console.warn("[loader] local only: nothing loads without the dev server. Run pnpm connect and paste the loader again.");`
+}
   }
 
   if(!isWF || !tryLocal){
     loadFromDeploy();
     return;
   }
-
+${
+  connected
+    ? `
   if(js){
     var p=d.createElement("link");
     p.rel="preload"; p.as="script"; p.href=DEP+"/"+js;
@@ -143,14 +153,16 @@ ${
     p.rel="preload"; p.as="style"; p.href=DEP+"/"+f;
     h.appendChild(p);
   });
-
+`
+    : ""
+}
   css.forEach(function(f){
     var l=loadCSS(LOC+"/"+f);
-    l.onerror=function(){ loadCSS(DEP+"/"+f); };
+    l.onerror=function(){ ${connected ? `loadCSS(DEP+"/"+f);` : "loadFromDeploy();"} };
   });
   if(js){
     var s=loadScript(LOC+"/"+js);
-    s.onerror=function(){ loadScript(DEP+"/"+js); };
+    s.onerror=function(){ ${connected ? `loadScript(DEP+"/"+js);` : "loadFromDeploy();"} };
   }
 
 })(document,document.head,location.hostname);
@@ -191,7 +203,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
     .filter((o) => o.path.endsWith(".css"))
     .map((o) => o.path.split("/dist/")[1]);
 
-  const loaderScript = hasConfig
+  const loaderScript = !configError
     ? generateLoaderScript(
         appJs,
         pageJs,
@@ -390,8 +402,12 @@ function generateIndexHtml(outputs: BuildOutput[]) {
       <body>
         ${
           loaderScript
-            ? `<h2>Loader Script</h2>
-        <p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code> (desktop; <code>?local=1</code> to force it on touch devices like the iOS Simulator, <code>?local=0</code> to skip it), falls back to deployed. To share a branch preview on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>
+            ? `<h2>Loader Script${hasConfig ? "" : " (local only)"}</h2>
+        ${
+          hasConfig
+            ? `<p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code. Loads from local dev server when on <code>.webflow.io</code> (desktop; <code>?local=1</code> to force it on touch devices like the iOS Simulator, <code>?local=0</code> to skip it), falls back to deployed. To share a branch preview on <code>.webflow.io</code>, add <code>?js=&lt;preview url&gt;</code> and/or <code>&amp;css=&lt;preview url&gt;</code> (only <code>https://*${escapeHtml(previewHostSuffix)}</code>); <code>?js=off</code> / <code>?css=off</code> clears it.</p>`
+            : `<p style="font-size:0.9em;color:var(--code-color)">Paste this into your Webflow site's <code>&lt;head&gt;</code> custom code to start building. It only loads from this dev server, on <code>.webflow.io</code> on a desktop. Phones and your published domain get no JS or CSS from it. Before you publish, run <code>pnpm connect</code> and replace it with the loader this page shows then.</p>`
+        }
         <div class="loader-box">
           <span class="copy-hint">click to copy</span>
           <pre>${escapeHtml(loaderScript)}</pre>
@@ -412,7 +428,7 @@ function generateIndexHtml(outputs: BuildOutput[]) {
             ? `<div class="config-notice"><span class="icon">&#9432;</span><span>${
                 configError
                   ? escapeHtml(configError)
-                  : "Run <code>pnpm connect</code> to choose a host and get the loader script"
+                  : "Not connected to a host yet. Run <code>pnpm connect</code> before you publish"
               }</span><span class="close">&#10005;</span></div>`
             : ""
         }
