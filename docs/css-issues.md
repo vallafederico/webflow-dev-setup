@@ -6,8 +6,8 @@ All CSS is managed by the **unified loader script** — there is no need to add 
 
 The loader injects `app.css` using the same local-first-with-fallback strategy as JavaScript:
 
-- **Production**: CSS loads directly from Vercel.
-- **Dev** (`.webflow.io`): tries local dev server first, falls back to Vercel on error.
+- **Production**: CSS loads directly from the deployment (Cloudflare or Vercel, see [Hosting](./hosting.md)).
+- **Dev** (`.webflow.io`): tries local dev server first, falls back to the deployment on error.
 
 ## CSS Entrypoint
 
@@ -31,7 +31,7 @@ Since **no custom CSS is written inside Webflow**, there are no specificity conf
 
 ## Webflow Editor Styles
 
-Use `src/styles/editor.css` for styles that should only apply or adjust behavior inside the Webflow Designer. The editor detection system (`handleEditor`) handles JS-side adjustments, but CSS-only tweaks can go here.
+Use `src/styles/editor.css` for styles that should only apply or adjust behavior inside the Webflow Designer. The editor detection system (`onEditor` in modules) handles JS-side adjustments, but CSS-only tweaks can go here.
 
 ## Troubleshooting
 

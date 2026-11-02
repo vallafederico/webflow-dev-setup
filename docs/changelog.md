@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] - 2026-11-02
+
+### Added
+
+- **Cloudflare hosting alongside Vercel**: `pnpm connect cloudflare` or `pnpm connect vercel` picks the host and writes `project.config.json` (and `wrangler.jsonc` on Cloudflare). On Cloudflare, pushing to `main` builds with Workers Builds, serves `dist/` as static assets, and runs `api/*.ts` through a generated router. Optional R2 media with `pnpm connect cloudflare --media` and `mediaUrl()`. See [Hosting](./hosting.md).
+- **Checks agents and CI can run**: `pnpm check`, `pnpm check:all`, `pnpm check:live` and `pnpm fix`, with house rules for modules, `pnpm new:module <name>`, and a GitHub Actions workflow that runs `pnpm check:all` on pull requests. See [House Rules](./house-rules.md).
+- **`onEditor`** in `@/modules/_`: calls a function with the Webflow editor state and releases its listener on destroy. Modules that use `Raf.add`, `onView` or GSAP must call it (`editor/handled`).
+
+### Changed
+
+- **Deploy URL and preview suffix come from `project.config.json`**, not the `VERCEL_URL` and `PREVIEW_HOST_SUFFIX` env vars. A loader with no suffix accepts no `?js=` preview, where it used to default to `.vercel.app`. Re-paste the loader after moving a site to another host. A build on Vercel with no config still uses the `VERCEL_URL` Vercel sets itself.
+- **pnpm replaces `bun install`**. Bun stays the bundler and dev runtime.
+- **`.claude/skills` is the only place skills are edited**. `pnpm sync:skills` copies them to `.codex` and `.cursor`, and `pnpm check` fails on drift.
+- **Docs say Taxi is opt-in**, with the steps to enable it. It was already off in the template.
+
+---
+
 ## [Unreleased] - 2026-10-06
 
 ### Fixed

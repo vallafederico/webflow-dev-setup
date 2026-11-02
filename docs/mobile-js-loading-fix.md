@@ -7,7 +7,7 @@ On mobile (especially Safari), the site could appear stuck with no JS — or Saf
 ## Symptoms
 
 - Custom JS never runs on phones / tablets viewing `.webflow.io` or production
-- Safari Advanced Tracking / Private Browsing warning about the Vercel script URL
+- Safari Advanced Tracking / Private Browsing warning about the deployment's script URL
 - Preloader / cover stuck forever after a cached reload
 - About / info routes load a stub page script and never boot `App`
 
@@ -18,7 +18,7 @@ On mobile (especially Safari), the site could appear stuck with no JS — or Saf
 **Problems**
 
 - On `.webflow.io`, the loader always tried `https://localhost:6545` first. On a phone that address is the phone itself, with no dev server or trusted certificate, so every load made a failing request to a local address before falling back to the deploy. This is the most likely trigger for Safari's privacy prompt: a public page probing local addresses. Not yet confirmed on a physical iPhone.
-- `crossOrigin="anonymous"` was set on classic (non-module) scripts, turning them into CORS requests. That wasn't breaking loading: `vercel.json` sends `Access-Control-Allow-Origin: *`, so the CORS check passes. It's just unnecessary for classic scripts.
+- `crossOrigin="anonymous"` was set on classic (non-module) scripts, turning them into CORS requests. That wasn't breaking loading: the host sends `Access-Control-Allow-Origin: *` (`vercel.json` on Vercel, `dist/_headers` on Cloudflare), so the CORS check passes. It's just unnecessary for classic scripts.
 
 **Fixes**
 
@@ -32,7 +32,7 @@ On mobile (especially Safari), the site could appear stuck with no JS — or Saf
 **Problems**
 
 - `app.js` is injected from `<head>`, so on a cached reload it can run before `<body>` exists. Reading `document.body` threw during bundle init and killed the whole app.
-- Many modules called `handleEditor()`, each creating its own `MutationObserver` on `document.body` with no disconnect.
+- Many modules called `handleEditor()` (modules now use `onEditor`, which wraps it and releases its listener), each creating its own `MutationObserver` on `document.body` with no disconnect.
 
 **Fixes**
 
@@ -57,6 +57,6 @@ Uses `handleEditor` at module init. With the body-safe shared observer above, sc
 ## After deploy
 
 1. Rebuild / redeploy so the new loader script is generated
-2. Paste the updated **Loader Script** from the dev server index into Webflow site `<head>` custom code
+2. Paste the updated **Loader Script** from the dev server index (after `pnpm connect`) into Webflow site `<head>` custom code
 3. Publish the Webflow site
 4. On a phone: confirm JS runs without a Safari privacy prompt; on desktop `.webflow.io`, local-first still works unless `?local=0`
