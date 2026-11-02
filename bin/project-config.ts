@@ -43,10 +43,14 @@ export function validateProjectConfig(value: unknown): string[] {
     errors.push("name must be a lowercase DNS label");
   }
   if (!isHttpsOrigin(config.deployUrl)) {
-    errors.push("deployUrl must be an https origin with no path or trailing slash");
+    errors.push(
+      "deployUrl must be an https origin with no path or trailing slash"
+    );
   }
   if (config.mediaUrl !== null && !isHttpsOrigin(config.mediaUrl)) {
-    errors.push("mediaUrl must be null or an https origin with no path or trailing slash");
+    errors.push(
+      "mediaUrl must be null or an https origin with no path or trailing slash"
+    );
   }
   if (
     typeof config.previewHostSuffix !== "string" ||

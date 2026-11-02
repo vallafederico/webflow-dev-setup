@@ -13,7 +13,8 @@ const DEPLOY = "https://acme.itsoffbrand.dev";
 const OVERRIDE = "https://override.example.com";
 const SUFFIX = "-acme.team.workers.dev";
 const PREVIEW = `https://feat-x${SUFFIX}`;
-const WEBFLOW_CDN = "https://assets-global.webflow.com/abc123/def456_app.js.txt";
+const WEBFLOW_CDN =
+  "https://assets-global.webflow.com/abc123/def456_app.js.txt";
 
 /** Stands in for the browser's class, so `instanceof` behaves as it does there. */
 class FakeScriptElement {
@@ -138,19 +139,32 @@ describe("public-asset script origin", () => {
 describe("mediaUrl", () => {
   test("uses the media origin", async () => {
     setup({ asset: DEPLOY, media: "https://media.example.com/" });
-    expect((await loadAsset()).mediaUrl("/big/model.glb")).toBe("https://media.example.com/big/model.glb");
+    expect((await loadAsset()).mediaUrl("/big/model.glb")).toBe(
+      "https://media.example.com/big/model.glb"
+    );
   });
 
   test("falls back to publicAssetUrl without a media origin", async () => {
     setup({ asset: DEPLOY });
-    expect((await loadAsset()).mediaUrl("model.glb")).toBe(`${DEPLOY}/model.glb`);
+    expect((await loadAsset()).mediaUrl("model.glb")).toBe(
+      `${DEPLOY}/model.glb`
+    );
   });
 
   test("a media file follows the preview script origin only through the fallback", async () => {
     setup({ current: `${PREVIEW}/app.js`, asset: DEPLOY, suffix: SUFFIX });
-    expect((await loadAsset()).mediaUrl("model.glb")).toBe(`${PREVIEW}/model.glb`);
-    setup({ current: `${PREVIEW}/app.js`, asset: DEPLOY, suffix: SUFFIX, media: "https://media.example.com" });
-    expect((await loadAsset()).mediaUrl("model.glb")).toBe("https://media.example.com/model.glb");
+    expect((await loadAsset()).mediaUrl("model.glb")).toBe(
+      `${PREVIEW}/model.glb`
+    );
+    setup({
+      current: `${PREVIEW}/app.js`,
+      asset: DEPLOY,
+      suffix: SUFFIX,
+      media: "https://media.example.com",
+    });
+    expect((await loadAsset()).mediaUrl("model.glb")).toBe(
+      "https://media.example.com/model.glb"
+    );
   });
 });
 
@@ -181,7 +195,9 @@ describe("apiPath", () => {
           ? undefined
           : {
               currentScript:
-                typeof current === "string" ? new FakeScriptElement(current) : current,
+                typeof current === "string"
+                  ? new FakeScriptElement(current)
+                  : current,
             },
         FakeScriptElement
       );
@@ -199,8 +215,14 @@ describe("apiPath", () => {
   };
 
   test("uses the dev API origin when it is set", async () => {
-    const { out } = await run({ ...base, __API_DEV_ORIGIN__: "https://localhost:6546" });
-    expect(out).toEqual(["https://localhost:6546/api/test", "https://localhost:6546/api/"]);
+    const { out } = await run({
+      ...base,
+      __API_DEV_ORIGIN__: "https://localhost:6546",
+    });
+    expect(out).toEqual([
+      "https://localhost:6546/api/test",
+      "https://localhost:6546/api/",
+    ]);
   });
 
   test("uses the asset origin in production, with no localhost in the bundle", async () => {
@@ -216,7 +238,9 @@ describe("apiPath", () => {
 
   test("ignores a script on Webflow's CDN and an overridden currentScript", async () => {
     expect((await run(base, WEBFLOW_CDN)).out[0]).toBe(`${DEPLOY}/api/test`);
-    expect((await run(base, { src: `${PREVIEW}/app.js` })).out[0]).toBe(`${DEPLOY}/api/test`);
+    expect((await run(base, { src: `${PREVIEW}/app.js` })).out[0]).toBe(
+      `${DEPLOY}/api/test`
+    );
   });
 
   test("does not read process.env", async () => {

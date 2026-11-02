@@ -75,8 +75,8 @@ export class ObserverManager {
             ? 1
             : -1
           : boundingClientRect.top > 0
-          ? -1
-          : 1;
+            ? -1
+            : 1;
       }
       elementData.lastDirection = direction;
 

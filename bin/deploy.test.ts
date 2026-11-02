@@ -45,7 +45,10 @@ async function run(host: "cloudflare" | "vercel" | null, hook?: string) {
 describe("deploy", () => {
   test("cloudflare says pushing to main deploys, and never calls the hook", async () => {
     let called = false;
-    const hook = Bun.serve({ port: 0, fetch: () => ((called = true), Response.json({})) });
+    const hook = Bun.serve({
+      port: 0,
+      fetch: () => ((called = true), Response.json({})),
+    });
     try {
       const { code, out } = await run("cloudflare", String(hook.url));
       expect(code).toBe(0);
@@ -61,7 +64,9 @@ describe("deploy", () => {
     const methods: string[] = [];
     const hook = Bun.serve({
       port: 0,
-      fetch: (req) => (methods.push(req.method), Response.json({ job: { id: "j1" } })),
+      fetch: (req) => (
+        methods.push(req.method), Response.json({ job: { id: "j1" } })
+      ),
     });
     try {
       const { code, out } = await run("vercel", String(hook.url));
@@ -84,14 +89,18 @@ describe("deploy", () => {
     const methods: string[] = [];
     const hook = Bun.serve({
       port: 0,
-      fetch: (req) => (methods.push(req.method), Response.json({ job: { id: "j2" } })),
+      fetch: (req) => (
+        methods.push(req.method), Response.json({ job: { id: "j2" } })
+      ),
     });
     try {
       const { code, out } = await run(null, String(hook.url));
       expect(code).toBe(0);
       expect(methods).toEqual(["POST"]);
       expect(out).toContain("j2");
-      expect(out).toContain("No project.config.json. Run `pnpm connect vercel`");
+      expect(out).toContain(
+        "No project.config.json. Run `pnpm connect vercel`"
+      );
       expect(out).not.toContain("Deployment URL");
     } finally {
       hook.stop(true);

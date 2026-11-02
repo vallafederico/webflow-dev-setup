@@ -157,7 +157,10 @@ ${
 <\/script>`;
 }
 
-function readConfigSafe(): { config: ProjectConfig | null; error: string | null } {
+function readConfigSafe(): {
+  config: ProjectConfig | null;
+  error: string | null;
+} {
   try {
     return { config: readProjectConfig(), error: null };
   } catch (error) {

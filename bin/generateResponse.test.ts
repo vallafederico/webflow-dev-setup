@@ -97,33 +97,49 @@ const hrefs = (els: El[]) => els.map((e) => e.href);
 
 describe("loader preview allowlist", () => {
   test("with no suffix, ?js=https://anything is refused and warned about", () => {
-    const { scripts, warnings } = runLoader(loaderFor(""), { search: "?js=https://anything" });
+    const { scripts, warnings } = runLoader(loaderFor(""), {
+      search: "?js=https://anything",
+    });
     expect(srcs(scripts)).toEqual([`${DEP}/app.js`]);
     expect(warnings.length).toBe(1);
     expect(String(warnings[0][0])).toContain("[loader] ignoring js preview");
   });
 
   test("with no suffix, even a *.vercel.app or *.workers.dev URL is refused", () => {
-    for (const url of ["https://x.vercel.app", "https://x-acme.team.workers.dev", "https://"]) {
+    for (const url of [
+      "https://x.vercel.app",
+      "https://x-acme.team.workers.dev",
+      "https://",
+    ]) {
       const { scripts } = runLoader(loaderFor(""), { search: `?js=${url}` });
       expect(srcs(scripts)).toEqual([`${DEP}/app.js`]);
     }
   });
 
   test("with a suffix, a matching preview is used", () => {
-    const { scripts, warnings } = runLoader(loaderFor(SUFFIX), { search: `?js=${PREVIEW}` });
+    const { scripts, warnings } = runLoader(loaderFor(SUFFIX), {
+      search: `?js=${PREVIEW}`,
+    });
     expect(srcs(scripts)).toEqual([`${PREVIEW}/app.js`]);
     expect(warnings.length).toBe(0);
   });
 
   test("a preview given without a scheme is treated as https", () => {
-    const { scripts } = runLoader(loaderFor(SUFFIX), { search: `?js=feat-x${SUFFIX}` });
+    const { scripts } = runLoader(loaderFor(SUFFIX), {
+      search: `?js=feat-x${SUFFIX}`,
+    });
     expect(srcs(scripts)).toEqual([`${PREVIEW}/app.js`]);
   });
 
   test("with a suffix, other hosts and plain http are refused", () => {
-    for (const url of ["https://anything", "https://evil.example.com", `http://feat-x${SUFFIX}`]) {
-      const { scripts, warnings } = runLoader(loaderFor(SUFFIX), { search: `?js=${url}` });
+    for (const url of [
+      "https://anything",
+      "https://evil.example.com",
+      `http://feat-x${SUFFIX}`,
+    ]) {
+      const { scripts, warnings } = runLoader(loaderFor(SUFFIX), {
+        search: `?js=${url}`,
+      });
       expect(srcs(scripts)).toEqual([`${DEP}/app.js`]);
       expect(warnings.length).toBe(1);
     }
@@ -200,7 +216,10 @@ describe("loader preview state", () => {
   });
 
   test("a preview skips localhost even on a desktop", () => {
-    const run = runLoader(loaderFor(SUFFIX), { search: `?js=${PREVIEW}`, coarse: false });
+    const run = runLoader(loaderFor(SUFFIX), {
+      search: `?js=${PREVIEW}`,
+      coarse: false,
+    });
     expect(srcs(run.scripts)).toEqual([`${PREVIEW}/app.js`]);
     expect(run.links.some((l) => l.rel === "preload")).toBe(false);
   });
@@ -208,8 +227,13 @@ describe("loader preview state", () => {
 
 describe("loader script insertion", () => {
   test("while the parser runs the loader, it writes a deferred tag", () => {
-    const run = runLoader(loaderFor(SUFFIX), { readyState: "loading", currentScript: {} });
-    expect(run.written).toEqual([`<script defer src="${DEP}/app.js"></script>`]);
+    const run = runLoader(loaderFor(SUFFIX), {
+      readyState: "loading",
+      currentScript: {},
+    });
+    expect(run.written).toEqual([
+      `<script defer src="${DEP}/app.js"></script>`,
+    ]);
     expect(run.scripts).toEqual([]);
   });
 
@@ -219,7 +243,9 @@ describe("loader script insertion", () => {
       currentScript: {},
       search: `?js=${PREVIEW}`,
     });
-    expect(run.written).toEqual([`<script defer src="${PREVIEW}/app.js"></script>`]);
+    expect(run.written).toEqual([
+      `<script defer src="${PREVIEW}/app.js"></script>`,
+    ]);
   });
 
   test("after parsing it appends a script with defer and never writes", () => {
@@ -231,21 +257,27 @@ describe("loader script insertion", () => {
     ]) {
       const run = runLoader(loaderFor(SUFFIX), opts);
       expect(run.written).toEqual([]);
-      expect(run.scripts).toEqual([{ tag: "script", src: `${DEP}/app.js`, defer: true }]);
+      expect(run.scripts).toEqual([
+        { tag: "script", src: `${DEP}/app.js`, defer: true },
+      ]);
     }
   });
 
   test("stylesheets are links appended to <head>", () => {
     const run = runLoader(loaderFor(SUFFIX));
-    expect(run.links).toEqual([{ tag: "link", rel: "stylesheet", href: `${DEP}/app.css` }]);
+    expect(run.links).toEqual([
+      { tag: "link", rel: "stylesheet", href: `${DEP}/app.css` },
+    ]);
   });
 
   test("a page script is chosen by the first path segment, else app.js", () => {
     const loader = loaderFor(SUFFIX, ["pages/about.js"]);
-    expect(srcs(runLoader(loader, { pathname: "/about/team" }).scripts)).toEqual([
-      `${DEP}/pages/about.js`,
+    expect(
+      srcs(runLoader(loader, { pathname: "/about/team" }).scripts)
+    ).toEqual([`${DEP}/pages/about.js`]);
+    expect(srcs(runLoader(loader, { pathname: "/" }).scripts)).toEqual([
+      `${DEP}/app.js`,
     ]);
-    expect(srcs(runLoader(loader, { pathname: "/" }).scripts)).toEqual([`${DEP}/app.js`]);
   });
 });
 
@@ -260,7 +292,9 @@ describe("loader localhost", () => {
       { tag: "link", rel: "preload", as: "script", href: `${DEP}/app.js` },
       { tag: "link", rel: "preload", as: "style", href: `${DEP}/app.css` },
     ]);
-    expect(hrefs(run.links.filter((l) => l.rel === "stylesheet"))).toEqual([`${LOC}/app.css`]);
+    expect(hrefs(run.links.filter((l) => l.rel === "stylesheet"))).toEqual([
+      `${LOC}/app.css`,
+    ]);
   });
 
   test("when localhost fails to load, each file falls back to the deployment", () => {
@@ -284,13 +318,21 @@ describe("loader localhost", () => {
   test("a touch device skips localhost unless ?local=1, which is remembered", () => {
     const loader = loaderFor(SUFFIX);
     const store = new Map<string, string>();
-    expect(srcs(runLoader(loader, { coarse: true, store }).scripts)).toEqual([`${DEP}/app.js`]);
+    expect(srcs(runLoader(loader, { coarse: true, store }).scripts)).toEqual([
+      `${DEP}/app.js`,
+    ]);
 
-    const forced = runLoader(loader, { coarse: true, search: "?local=1", store });
+    const forced = runLoader(loader, {
+      coarse: true,
+      search: "?local=1",
+      store,
+    });
     expect(srcs(forced.scripts)).toEqual([`${LOC}/app.js`]);
     expect(store.get("wf-local")).toBe("1");
 
-    expect(srcs(runLoader(loader, { coarse: true, store }).scripts)).toEqual([`${LOC}/app.js`]);
+    expect(srcs(runLoader(loader, { coarse: true, store }).scripts)).toEqual([
+      `${LOC}/app.js`,
+    ]);
   });
 
   test("?local=0 goes straight to the deployment and forgets ?local=1", () => {
@@ -302,7 +344,10 @@ describe("loader localhost", () => {
   });
 
   test("outside .webflow.io it loads the deployment", () => {
-    const run = runLoader(loaderFor(SUFFIX), { coarse: false, host: "www.example.com" });
+    const run = runLoader(loaderFor(SUFFIX), {
+      coarse: false,
+      host: "www.example.com",
+    });
     expect(srcs(run.scripts)).toEqual([`${DEP}/app.js`]);
   });
 });

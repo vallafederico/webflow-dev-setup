@@ -115,8 +115,8 @@ function computeBounds(el: HTMLElement, config: typeof DEFAULT_CONFIG) {
     (config.bottom === "center"
       ? centerOffset
       : config.bottom === "bottom"
-      ? wh
-      : 0);
+        ? wh
+        : 0);
 
   return bounds;
 }

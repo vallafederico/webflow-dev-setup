@@ -98,8 +98,11 @@ export function globEagerPlugin(options: GlobPluginOptions = {}): any {
             );
           } catch (error) {
             console.error("Error processing glob:", error);
-            const line = sourceCode.substring(0, match.index).split("\n").length;
-            const reason = error instanceof Error ? error.message : String(error);
+            const line = sourceCode
+              .substring(0, match.index)
+              .split("\n").length;
+            const reason =
+              error instanceof Error ? error.message : String(error);
             throw new Error(
               `Failed to process glob pattern at ${args.path}:${line}: ${reason}`
             );

@@ -42,7 +42,8 @@ function ensureObserver() {
   };
 
   if (document.body) observeBody();
-  else document.addEventListener("DOMContentLoaded", observeBody, { once: true });
+  else
+    document.addEventListener("DOMContentLoaded", observeBody, { once: true });
 }
 
 export function handleEditor(onEditorView: EditorListener | null = null) {

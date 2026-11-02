@@ -14,13 +14,16 @@ html {
     var(--min-font-size),
     calc(
       (
-          (100vw / var(--design-width) * (var(--value) * var(--vw-ratio))) +
-            (1 - var(--vw-ratio)) * (var(--value) * 1px)
-        ) +
-        (
-          (100vh / var(--design-height) * (var(--value) * var(--vh-ratio))) +
-            (1 - var(--vh-ratio)) * (var(--value) * 1px)
-        ) / 2
+        (100vw / var(--design-width) * (var(--value) * var(--vw-ratio))) +
+        (1 - var(--vw-ratio)) *
+        (var(--value) * 1px)
+      ) +
+      (
+        (100vh / var(--design-height) * (var(--value) * var(--vh-ratio))) +
+        (1 - var(--vh-ratio)) *
+        (var(--value) * 1px)
+      ) /
+      2
     ),
     var(--max-font-size)
   );

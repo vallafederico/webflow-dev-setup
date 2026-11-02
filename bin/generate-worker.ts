@@ -26,9 +26,15 @@ export async function listApiRoutes(apiDir: string): Promise<string[]> {
 }
 
 /** `importDir` is where the generated file lives relative to `api/`, so imports resolve from `.generated/`. */
-export function generateWorkerSource(routes: string[], importDir: string): string {
+export function generateWorkerSource(
+  routes: string[],
+  importDir: string
+): string {
   const imports = routes
-    .map((name, i) => `import * as route${i} from ${JSON.stringify(`${importDir}/${name}`)};`)
+    .map(
+      (name, i) =>
+        `import * as route${i} from ${JSON.stringify(`${importDir}/${name}`)};`
+    )
     .join("\n");
   const table = routes
     .map((name, i) => `  ${JSON.stringify(`/api/${name}`)}: route${i},`)

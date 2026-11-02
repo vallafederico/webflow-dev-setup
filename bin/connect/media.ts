@@ -34,7 +34,12 @@ export const CORS_RULES = {
         // Range is not a simple header, so ranged GETs (video, large glTF) preflight.
         headers: ["Range", "Content-Type"],
       },
-      exposeHeaders: ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+      exposeHeaders: [
+        "Content-Length",
+        "Content-Range",
+        "Accept-Ranges",
+        "ETag",
+      ],
       maxAgeSeconds: 86400,
     },
   ],
@@ -47,7 +52,9 @@ function detail(result: RunResult): string {
 /** True when `host` appears in `output` as a whole token, not inside a longer hostname. */
 function listsHost(output: string, host: string): boolean {
   const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^a-z0-9.-])${escaped}($|[^a-z0-9.-])`, "i").test(output);
+  return new RegExp(`(^|[^a-z0-9.-])${escaped}($|[^a-z0-9.-])`, "i").test(
+    output
+  );
 }
 
 export interface MediaOptions {
@@ -68,7 +75,8 @@ export interface MediaOptions {
 export async function setupMedia(options: MediaOptions): Promise<void> {
   const { run, accountId, bucket, mediaHost, zoneId, log } = options;
   const dir = mkdtempSync(join(tmpdir(), "connect-media-"));
-  const wrangler = (args: string[]) => run(args, { env: { CLOUDFLARE_ACCOUNT_ID: accountId }, cwd: dir });
+  const wrangler = (args: string[]) =>
+    run(args, { env: { CLOUDFLARE_ACCOUNT_ID: accountId }, cwd: dir });
 
   try {
     const created = await wrangler(["r2", "bucket", "create", bucket]);
@@ -84,24 +92,50 @@ export async function setupMedia(options: MediaOptions): Promise<void> {
     // A retry after a later failure finds the domain already here. Asking first, rather than
     // forgiving an "already" error, means a domain held by a different bucket still fails.
     const listed = await wrangler(["r2", "bucket", "domain", "list", bucket]);
-    if (listed.code !== 0) throw new StepError("Listing the R2 bucket's custom domains", detail(listed));
+    if (listed.code !== 0)
+      throw new StepError(
+        "Listing the R2 bucket's custom domains",
+        detail(listed)
+      );
     if (listsHost(listed.stdout, mediaHost)) {
       log(`${mediaHost} is already attached to ${bucket}, continuing.`);
     } else {
       // --force skips the confirmation prompt, which would otherwise hang or cancel without a TTY.
       const attached = await wrangler([
-        "r2", "bucket", "domain", "add", bucket, "--domain", mediaHost, "--zone-id", zoneId, "--force",
+        "r2",
+        "bucket",
+        "domain",
+        "add",
+        bucket,
+        "--domain",
+        mediaHost,
+        "--zone-id",
+        zoneId,
+        "--force",
       ]);
       if (attached.code !== 0) {
-        throw new StepError("Attaching the custom domain to the R2 bucket", detail(attached));
+        throw new StepError(
+          "Attaching the custom domain to the R2 bucket",
+          detail(attached)
+        );
       }
       log(`Attached ${mediaHost} to ${bucket}.`);
     }
 
     const file = join(dir, "cors.json");
     writeFileSync(file, `${JSON.stringify(CORS_RULES, null, 2)}\n`);
-    const cors = await wrangler(["r2", "bucket", "cors", "set", bucket, "--file", file, "--force"]);
-    if (cors.code !== 0) throw new StepError("Setting CORS on the R2 bucket", detail(cors));
+    const cors = await wrangler([
+      "r2",
+      "bucket",
+      "cors",
+      "set",
+      bucket,
+      "--file",
+      file,
+      "--force",
+    ]);
+    if (cors.code !== 0)
+      throw new StepError("Setting CORS on the R2 bucket", detail(cors));
     log(`Set CORS on ${bucket} (GET and HEAD from any origin).`);
   } finally {
     rmSync(dir, { recursive: true, force: true });

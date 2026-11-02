@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,7 +36,10 @@ const fail = (stderr: string): RunResult => ({ code: 1, stdout: "", stderr });
 
 function whoami(...ids: string[]): RunResult {
   return ok(
-    JSON.stringify({ loggedIn: true, accounts: ids.map((id) => ({ id, name: `Account ${id}` })) })
+    JSON.stringify({
+      loggedIn: true,
+      accounts: ids.map((id) => ({ id, name: `Account ${id}` })),
+    })
   );
 }
 
@@ -39,9 +50,15 @@ function fakeRunner(handlers: Record<string, Handler> = {}) {
   const calls: { args: string[]; env?: Record<string, string> }[] = [];
   const run: Runner = async (args, options) => {
     calls.push({ args, env: options?.env });
-    const key = args[0] === "r2" ? args.slice(0, args[2] === "domain" ? 4 : args[2] === "cors" ? 4 : 3).join(" ") : args[0];
+    const key =
+      args[0] === "r2"
+        ? args
+            .slice(0, args[2] === "domain" ? 4 : args[2] === "cors" ? 4 : 3)
+            .join(" ")
+        : args[0];
     const handler = handlers[key];
-    if (!handler) throw new Error(`Unexpected wrangler call: ${args.join(" ")}`);
+    if (!handler)
+      throw new Error(`Unexpected wrangler call: ${args.join(" ")}`);
     return handler(args);
   };
   return { run, calls };
@@ -49,7 +66,8 @@ function fakeRunner(handlers: Record<string, Handler> = {}) {
 
 const MEDIA_OK: Record<string, Handler> = {
   "r2 bucket create": () => ok(),
-  "r2 bucket domain list": () => ok("There are no custom domains connected to this bucket."),
+  "r2 bucket domain list": () =>
+    ok("There are no custom domains connected to this bucket."),
   "r2 bucket domain add": () => ok(),
   "r2 bucket cors set": () => ok(),
 };
@@ -79,18 +97,42 @@ function session(interactive = false, answers: string[] = []): Session {
 
 const NEWEST_DATE = () => "2026-10-23";
 
-async function run(argv: string[], options: { runner?: ReturnType<typeof fakeRunner>; io?: Session; env?: Record<string, string> } = {}) {
+async function run(
+  argv: string[],
+  options: {
+    runner?: ReturnType<typeof fakeRunner>;
+    io?: Session;
+    env?: Record<string, string>;
+  } = {}
+) {
   const runner = options.runner ?? fakeRunner();
   const io = options.io ?? session();
-  const code = await connect(argv, { cwd: dir, run: runner.run, io: io.io, env: options.env ?? {}, compatibilityDate: NEWEST_DATE });
+  const code = await connect(argv, {
+    cwd: dir,
+    run: runner.run,
+    io: io.io,
+    env: options.env ?? {},
+    compatibilityDate: NEWEST_DATE,
+  });
   return { code, runner, io };
 }
 
 const read = (file: string) => readFileSync(join(dir, file), "utf8");
 const readJson = (file: string) => JSON.parse(read(file));
-const snapshot = () => Object.fromEntries(readdirSync(dir).map((f) => [f, read(f)]));
+const snapshot = () =>
+  Object.fromEntries(readdirSync(dir).map((f) => [f, read(f)]));
 
-const CF = ["cloudflare", "--name", "acme", "--domain", "example.com", "--subdomain", "team", "--account-id", "abc"];
+const CF = [
+  "cloudflare",
+  "--name",
+  "acme",
+  "--domain",
+  "example.com",
+  "--subdomain",
+  "team",
+  "--account-id",
+  "abc",
+];
 const VC = ["vercel", "--name", "acme", "--suffix", "-your-team.vercel.app"];
 
 describe("cloudflare", () => {
@@ -132,9 +174,23 @@ describe("cloudflare", () => {
   });
 
   test("lowercases input", async () => {
-    await run(["cloudflare", "--name", "Acme", "--domain", "Example.COM", "--subdomain", "Team", "--account-id", "abc"]);
-    expect(readJson("project.config.json").deployUrl).toBe("https://acme.example.com");
-    expect(readJson("project.config.json").previewHostSuffix).toBe("-acme.team.workers.dev");
+    await run([
+      "cloudflare",
+      "--name",
+      "Acme",
+      "--domain",
+      "Example.COM",
+      "--subdomain",
+      "Team",
+      "--account-id",
+      "abc",
+    ]);
+    expect(readJson("project.config.json").deployUrl).toBe(
+      "https://acme.example.com"
+    );
+    expect(readJson("project.config.json").previewHostSuffix).toBe(
+      "-acme.team.workers.dev"
+    );
   });
 
   test("re-running with the same answers changes no bytes", async () => {
@@ -158,7 +214,10 @@ describe("cloudflare", () => {
   test("keeps an existing compatibility_date", async () => {
     await run(CF);
     const wrangler = readJson("wrangler.jsonc");
-    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify({ ...wrangler, compatibility_date: "2025-01-15" }, null, 2)}\n`);
+    writeFileSync(
+      join(dir, "wrangler.jsonc"),
+      `${JSON.stringify({ ...wrangler, compatibility_date: "2025-01-15" }, null, 2)}\n`
+    );
     await run(CF);
     expect(readJson("wrangler.jsonc").compatibility_date).toBe("2025-01-15");
   });
@@ -166,13 +225,19 @@ describe("cloudflare", () => {
   test("an older existing compatibility_date is kept byte for byte, and a newer one is lowered", async () => {
     await run(CF);
     const wrangler = readJson("wrangler.jsonc");
-    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify({ ...wrangler, compatibility_date: "2026-01-01" }, null, 2)}\n`);
+    writeFileSync(
+      join(dir, "wrangler.jsonc"),
+      `${JSON.stringify({ ...wrangler, compatibility_date: "2026-01-01" }, null, 2)}\n`
+    );
     const kept = snapshot();
     const same = await run(CF);
     expect(snapshot()).toEqual(kept);
     expect(same.io.out.join("\n")).not.toContain("lowered");
 
-    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify({ ...wrangler, compatibility_date: "2026-11-02" }, null, 2)}\n`);
+    writeFileSync(
+      join(dir, "wrangler.jsonc"),
+      `${JSON.stringify({ ...wrangler, compatibility_date: "2026-11-02" }, null, 2)}\n`
+    );
     const lowered = await run(CF);
     expect(readJson("wrangler.jsonc").compatibility_date).toBe("2026-10-23");
     expect(lowered.io.out.join("\n")).toContain("lowered to 2026-10-23");
@@ -222,38 +287,80 @@ describe("cloudflare", () => {
   test("the next steps name the account and say the domain must be active on it", async () => {
     const { io } = await run(CF);
     const text = io.out.join("\n");
-    expect(text).toContain("example.com is an active zone on Cloudflare account abc");
+    expect(text).toContain(
+      "example.com is an active zone on Cloudflare account abc"
+    );
     expect(text).toContain("`pnpm build`");
     expect(text).toContain("non-production branches");
     expect(text).toContain("`bun dev`");
   });
 
   test("reads the base domain from WF_BASE_DOMAIN", async () => {
-    const { code } = await run(["cloudflare", "--name", "acme", "--subdomain", "team", "--account-id", "abc"], {
-      env: { WF_BASE_DOMAIN: "env.example.org" },
-    });
+    const { code } = await run(
+      [
+        "cloudflare",
+        "--name",
+        "acme",
+        "--subdomain",
+        "team",
+        "--account-id",
+        "abc",
+      ],
+      {
+        env: { WF_BASE_DOMAIN: "env.example.org" },
+      }
+    );
     expect(code).toBe(0);
-    expect(readJson("project.config.json").deployUrl).toBe("https://acme.env.example.org");
+    expect(readJson("project.config.json").deployUrl).toBe(
+      "https://acme.env.example.org"
+    );
   });
 
   test("never hard-codes a domain", async () => {
-    const { code, io } = await run(["cloudflare", "--name", "acme", "--subdomain", "team", "--account-id", "abc"]);
+    const { code, io } = await run([
+      "cloudflare",
+      "--name",
+      "acme",
+      "--subdomain",
+      "team",
+      "--account-id",
+      "abc",
+    ]);
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("--domain");
-    expect(readFileSync(join(import.meta.dir, "connect.ts"), "utf8")).not.toContain("itsoffbrand");
+    expect(
+      readFileSync(join(import.meta.dir, "connect.ts"), "utf8")
+    ).not.toContain("itsoffbrand");
   });
 
   test("a bare workers.dev name and a full workers.dev host are both accepted", async () => {
-    await run(["cloudflare", "--name", "acme", "--domain", "example.com", "--subdomain", "team.workers.dev", "--account-id", "abc"]);
-    expect(readJson("project.config.json").previewHostSuffix).toBe("-acme.team.workers.dev");
+    await run([
+      "cloudflare",
+      "--name",
+      "acme",
+      "--domain",
+      "example.com",
+      "--subdomain",
+      "team.workers.dev",
+      "--account-id",
+      "abc",
+    ]);
+    expect(readJson("project.config.json").previewHostSuffix).toBe(
+      "-acme.team.workers.dev"
+    );
   });
 
   test("keeps an existing mediaUrl", async () => {
     await run(CF);
     const config = readJson("project.config.json");
-    writeFileSync(join(dir, "project.config.json"), `${JSON.stringify({ ...config, mediaUrl: "https://media.example.com" }, null, 2)}\n`);
+    writeFileSync(
+      join(dir, "project.config.json"),
+      `${JSON.stringify({ ...config, mediaUrl: "https://media.example.com" }, null, 2)}\n`
+    );
     await run(CF);
-    expect(readJson("project.config.json").mediaUrl).toBe("https://media.example.com");
+    expect(readJson("project.config.json").mediaUrl).toBe(
+      "https://media.example.com"
+    );
   });
 
   test("prompts show the folder name and workers.dev guidance, and accept defaults", async () => {
@@ -266,17 +373,27 @@ describe("cloudflare", () => {
       asked.push(`${question} [${fallback ?? ""}]`);
       return original(question, fallback);
     };
-    const code = await connect(["cloudflare", "--account-id", "abc"], { cwd: folder, run: fakeRunner().run, io: s.io, env: {}, compatibilityDate: NEWEST_DATE });
+    const code = await connect(["cloudflare", "--account-id", "abc"], {
+      cwd: folder,
+      run: fakeRunner().run,
+      io: s.io,
+      env: {},
+      compatibilityDate: NEWEST_DATE,
+    });
     expect(code).toBe(0);
     expect(asked[0]).toContain("[my-site]");
     expect(asked[2]).toContain("Cloudflare dashboard under Workers");
     expect(asked[2]).toContain("`wrangler deploy` output");
-    expect(JSON.parse(readFileSync(join(folder, "project.config.json"), "utf8")).name).toBe("my-site");
+    expect(
+      JSON.parse(readFileSync(join(folder, "project.config.json"), "utf8")).name
+    ).toBe("my-site");
   });
 
   test("an invalid prompt answer is asked again", async () => {
     const s = session(true, ["www", "acme", "example.com", "team"]);
-    const { code } = await run(["cloudflare", "--account-id", "abc"], { io: s });
+    const { code } = await run(["cloudflare", "--account-id", "abc"], {
+      io: s,
+    });
     expect(code).toBe(0);
     expect(s.err.join("\n")).toContain("reserved");
   });
@@ -300,7 +417,9 @@ describe("accounts", () => {
   });
 
   test("not logged in stops with instructions and writes nothing", async () => {
-    const runner = fakeRunner({ whoami: () => ok(JSON.stringify({ loggedIn: false })) });
+    const runner = fakeRunner({
+      whoami: () => ok(JSON.stringify({ loggedIn: false })),
+    });
     const { code, io } = await run(noAccount, { runner });
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("wrangler login");
@@ -345,7 +464,9 @@ describe("accounts", () => {
       expect(snapshot()).toEqual(before);
     }
     // Passing it is the confirmation.
-    expect((await run(CF.map((v) => (v === "abc" ? "other" : v)))).code).toBe(0);
+    expect((await run(CF.map((v) => (v === "abc" ? "other" : v)))).code).toBe(
+      0
+    );
     expect(readJson("wrangler.jsonc").account_id).toBe("other");
   });
 
@@ -406,25 +527,49 @@ describe("vercel", () => {
     "-a.b.vercel.app",
     "-team-.vercel.app",
   ])("rejects the suffix %p", async (suffix) => {
-    const { code, io } = await run(["vercel", "--name", "acme", "--suffix", suffix]);
+    const { code, io } = await run([
+      "vercel",
+      "--name",
+      "acme",
+      "--suffix",
+      suffix,
+    ]);
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("--suffix");
     expect(readdirSync(dir)).toEqual([]);
   });
 
   test("explains why a suffix needs a leading - or .", async () => {
-    const { io } = await run(["vercel", "--name", "acme", "--suffix", "yourteam.vercel.app"]);
+    const { io } = await run([
+      "vercel",
+      "--name",
+      "acme",
+      "--suffix",
+      "yourteam.vercel.app",
+    ]);
     expect(io.err.join("\n")).toContain("evil-notyourteam.vercel.app");
   });
 
   test("accepts a leading dot and lowercases", async () => {
-    const { code } = await run(["vercel", "--name", "acme", "--suffix", ".Team.Vercel.App"]);
+    const { code } = await run([
+      "vercel",
+      "--name",
+      "acme",
+      "--suffix",
+      ".Team.Vercel.App",
+    ]);
     expect(code).toBe(0);
-    expect(readJson("project.config.json").previewHostSuffix).toBe(".team.vercel.app");
+    expect(readJson("project.config.json").previewHostSuffix).toBe(
+      ".team.vercel.app"
+    );
   });
 
   test("cloudflare-only flags are rejected", async () => {
-    for (const flag of [["--domain", "example.com"], ["--media"], ["--account-id", "abc"]]) {
+    for (const flag of [
+      ["--domain", "example.com"],
+      ["--media"],
+      ["--account-id", "abc"],
+    ]) {
       const { code, io } = await run([...VC, ...flag]);
       expect(code).toBe(1);
       expect(io.err.join("\n")).toContain("only applies to cloudflare");
@@ -435,46 +580,110 @@ describe("vercel", () => {
 });
 
 describe("validation", () => {
-  test.each(["Acme_x", "-acme", "acme-", "a.b", "acme site", "x".repeat(64)])("rejects the name %p", async (name) => {
-    const { code, io } = await run(["vercel", "--name", name, "--suffix", "-t.vercel.app"]);
-    expect(code).toBe(1);
-    expect(io.err.join("\n")).toContain("--name");
-    expect(readdirSync(dir)).toEqual([]);
-  });
+  test.each(["Acme_x", "-acme", "acme-", "a.b", "acme site", "x".repeat(64)])(
+    "rejects the name %p",
+    async (name) => {
+      const { code, io } = await run([
+        "vercel",
+        "--name",
+        name,
+        "--suffix",
+        "-t.vercel.app",
+      ]);
+      expect(code).toBe(1);
+      expect(io.err.join("\n")).toContain("--name");
+      expect(readdirSync(dir)).toEqual([]);
+    }
+  );
 
-  test.each(["www", "api", "cdn", "mail", "admin", "ftp", "app", "WWW"])("rejects the reserved name %p", async (name) => {
-    const { code, io } = await run(["vercel", "--name", name, "--suffix", "-t.vercel.app"]);
-    expect(code).toBe(1);
-    expect(io.err.join("\n")).toContain("reserved");
-  });
+  test.each(["www", "api", "cdn", "mail", "admin", "ftp", "app", "WWW"])(
+    "rejects the reserved name %p",
+    async (name) => {
+      const { code, io } = await run([
+        "vercel",
+        "--name",
+        name,
+        "--suffix",
+        "-t.vercel.app",
+      ]);
+      expect(code).toBe(1);
+      expect(io.err.join("\n")).toContain("reserved");
+    }
+  );
 
-  test.each(["evil.com/x", "evil.com", "-bad", "a_b", "x".repeat(64)])("rejects the workers.dev subdomain %p", async (subdomain) => {
-    const { code, io } = await run(["cloudflare", "--name", "acme", "--domain", "example.com", "--subdomain", subdomain, "--account-id", "abc"]);
-    expect(code).toBe(1);
-    expect(io.err.join("\n")).toContain("--subdomain");
-    expect(readdirSync(dir)).toEqual([]);
-  });
+  test.each(["evil.com/x", "evil.com", "-bad", "a_b", "x".repeat(64)])(
+    "rejects the workers.dev subdomain %p",
+    async (subdomain) => {
+      const { code, io } = await run([
+        "cloudflare",
+        "--name",
+        "acme",
+        "--domain",
+        "example.com",
+        "--subdomain",
+        subdomain,
+        "--account-id",
+        "abc",
+      ]);
+      expect(code).toBe(1);
+      expect(io.err.join("\n")).toContain("--subdomain");
+      expect(readdirSync(dir)).toEqual([]);
+    }
+  );
 
-  test.each(["--zone-id=--force", "--zone-id=-x", "--account-id=--help"])("rejects an ID that starts with a dash: %p", async (flag) => {
-    const argv = flag.startsWith("--zone-id") ? [...CF, "--media", flag] : [...CF.slice(0, -2), flag];
-    const { code, io } = await run(argv, { runner: fakeRunner(MEDIA_OK) });
-    expect(code).toBe(1);
-    expect(io.err.join("\n")).toContain(flag.split("=")[0]);
-    expect(readdirSync(dir)).toEqual([]);
-  });
+  test.each(["--zone-id=--force", "--zone-id=-x", "--account-id=--help"])(
+    "rejects an ID that starts with a dash: %p",
+    async (flag) => {
+      const argv = flag.startsWith("--zone-id")
+        ? [...CF, "--media", flag]
+        : [...CF.slice(0, -2), flag];
+      const { code, io } = await run(argv, { runner: fakeRunner(MEDIA_OK) });
+      expect(code).toBe(1);
+      expect(io.err.join("\n")).toContain(flag.split("=")[0]);
+      expect(readdirSync(dir)).toEqual([]);
+    }
+  );
 
-  test.each(["https://example.com", "example", "example.com/path", "-bad.com", "1.2"])("rejects the domain %p", async (domain) => {
-    const { code, io } = await run(["cloudflare", "--name", "acme", "--domain", domain, "--subdomain", "team", "--account-id", "abc"]);
+  test.each([
+    "https://example.com",
+    "example",
+    "example.com/path",
+    "-bad.com",
+    "1.2",
+  ])("rejects the domain %p", async (domain) => {
+    const { code, io } = await run([
+      "cloudflare",
+      "--name",
+      "acme",
+      "--domain",
+      domain,
+      "--subdomain",
+      "team",
+      "--account-id",
+      "abc",
+    ]);
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("--domain");
   });
 
   test("a name too long for the media bucket is rejected only with --media", async () => {
     const name = "a".repeat(58);
-    const base = ["cloudflare", "--name", name, "--domain", "example.com", "--subdomain", "team", "--account-id", "abc"];
+    const base = [
+      "cloudflare",
+      "--name",
+      name,
+      "--domain",
+      "example.com",
+      "--subdomain",
+      "team",
+      "--account-id",
+      "abc",
+    ];
     expect((await run(base)).code).toBe(0);
     rmSync(join(dir, "project.config.json"));
-    const { code, io } = await run([...base, "--media", "--zone-id", "z"], { runner: fakeRunner(MEDIA_OK) });
+    const { code, io } = await run([...base, "--media", "--zone-id", "z"], {
+      runner: fakeRunner(MEDIA_OK),
+    });
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("63");
   });
@@ -486,7 +695,12 @@ describe("validation", () => {
   });
 
   test("unknown hosts and flags print usage and exit 1", async () => {
-    for (const argv of [["netlify"], [], ["cloudflare", "vercel"], ["vercel", "--nope"]]) {
+    for (const argv of [
+      ["netlify"],
+      [],
+      ["cloudflare", "vercel"],
+      ["vercel", "--nope"],
+    ]) {
       const { code, io } = await run(argv);
       expect(code).toBe(1);
       expect(io.err.join("\n")).toContain("Usage: pnpm connect");
@@ -503,9 +717,42 @@ describe("validation", () => {
 
 describe("no TTY", () => {
   test.each([
-    ["--name", ["cloudflare", "--domain", "example.com", "--subdomain", "team", "--account-id", "abc"]],
-    ["--domain", ["cloudflare", "--name", "acme", "--subdomain", "team", "--account-id", "abc"]],
-    ["--subdomain", ["cloudflare", "--name", "acme", "--domain", "example.com", "--account-id", "abc"]],
+    [
+      "--name",
+      [
+        "cloudflare",
+        "--domain",
+        "example.com",
+        "--subdomain",
+        "team",
+        "--account-id",
+        "abc",
+      ],
+    ],
+    [
+      "--domain",
+      [
+        "cloudflare",
+        "--name",
+        "acme",
+        "--subdomain",
+        "team",
+        "--account-id",
+        "abc",
+      ],
+    ],
+    [
+      "--subdomain",
+      [
+        "cloudflare",
+        "--name",
+        "acme",
+        "--domain",
+        "example.com",
+        "--account-id",
+        "abc",
+      ],
+    ],
     ["--suffix", ["vercel", "--name", "acme"]],
     ["--zone-id", [...CF, "--media"]],
   ])("a missing value names %s and does not hang", async (flag, argv) => {
@@ -562,9 +809,14 @@ describe("changing host", () => {
   test("switching keeps mediaUrl", async () => {
     await run(VC);
     const config = readJson("project.config.json");
-    writeFileSync(join(dir, "project.config.json"), `${JSON.stringify({ ...config, mediaUrl: "https://m.example.com" }, null, 2)}\n`);
+    writeFileSync(
+      join(dir, "project.config.json"),
+      `${JSON.stringify({ ...config, mediaUrl: "https://m.example.com" }, null, 2)}\n`
+    );
     await run([...CF, "--yes"]);
-    expect(readJson("project.config.json").mediaUrl).toBe("https://m.example.com");
+    expect(readJson("project.config.json").mediaUrl).toBe(
+      "https://m.example.com"
+    );
   });
 
   test("an invalid existing config stops the run", async () => {
@@ -577,20 +829,34 @@ describe("changing host", () => {
 });
 
 describe("wrangler.jsonc hand edits", () => {
-  async function edit(change: (wrangler: Record<string, any>) => void, argv = CF) {
+  async function edit(
+    change: (wrangler: Record<string, any>) => void,
+    argv = CF
+  ) {
     await run(CF);
     const wrangler = readJson("wrangler.jsonc");
     change(wrangler);
-    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify(wrangler, null, 2)}\n`);
+    writeFileSync(
+      join(dir, "wrangler.jsonc"),
+      `${JSON.stringify(wrangler, null, 2)}\n`
+    );
     expect((await run(argv)).code).toBe(0);
     return readJson("wrangler.jsonc");
   }
 
   test("assets keeps extra settings, while directory and the API route stay managed", async () => {
     const wrangler = await edit((w) => {
-      w.assets = { directory: "./public", html_handling: "none", run_worker_first: ["/x/*"] };
+      w.assets = {
+        directory: "./public",
+        html_handling: "none",
+        run_worker_first: ["/x/*"],
+      };
     });
-    expect(wrangler.assets).toEqual({ directory: "./dist", html_handling: "none", run_worker_first: ["/x/*", "/api/*"] });
+    expect(wrangler.assets).toEqual({
+      directory: "./dist",
+      html_handling: "none",
+      run_worker_first: ["/x/*", "/api/*"],
+    });
   });
 
   test("run_worker_first true is kept as it already covers the API", async () => {
@@ -604,7 +870,10 @@ describe("wrangler.jsonc hand edits", () => {
     const wrangler = await edit((w) => {
       w.compatibility_flags = ["global_fetch_strictly_public"];
     });
-    expect(wrangler.compatibility_flags).toEqual(["global_fetch_strictly_public", "nodejs_compat"]);
+    expect(wrangler.compatibility_flags).toEqual([
+      "global_fetch_strictly_public",
+      "nodejs_compat",
+    ]);
   });
 
   test("previews is kept", async () => {
@@ -616,7 +885,10 @@ describe("wrangler.jsonc hand edits", () => {
 
   test("extra routes stay after the managed one, and are not duplicated", async () => {
     const wrangler = await edit((w) => {
-      w.routes.push("example.com/files/*", { pattern: "other.example.com", custom_domain: true });
+      w.routes.push("example.com/files/*", {
+        pattern: "other.example.com",
+        custom_domain: true,
+      });
     });
     expect(wrangler.routes).toEqual([
       { pattern: "acme.example.com", custom_domain: true },
@@ -635,7 +907,10 @@ describe("wrangler.jsonc hand edits", () => {
       },
       CF.map((v) => (v === "acme" ? "acme2" : v))
     );
-    expect(wrangler.routes).toEqual([{ pattern: "acme2.example.com", custom_domain: true }, "example.com/files/*"]);
+    expect(wrangler.routes).toEqual([
+      { pattern: "acme2.example.com", custom_domain: true },
+      "example.com/files/*",
+    ]);
   });
 });
 
@@ -648,21 +923,32 @@ describe("cloudflare --media", () => {
     const domains = new Map<string, string>();
     const handlers: Record<string, Handler> = {
       "r2 bucket create": (args) => {
-        if (buckets.has(args[3])) return fail("The bucket you tried to create already exists, and you own it. [code: 10004]");
+        if (buckets.has(args[3]))
+          return fail(
+            "The bucket you tried to create already exists, and you own it. [code: 10004]"
+          );
         buckets.add(args[3]);
         return ok();
       },
       "r2 bucket domain list": (args) => {
-        const mine = [...domains].filter(([, bucket]) => bucket === args[4]).map(([host]) => `domain: ${host}`);
-        return ok(mine.length > 0 ? mine.join("\n\n") : "There are no custom domains connected to this bucket.");
+        const mine = [...domains]
+          .filter(([, bucket]) => bucket === args[4])
+          .map(([host]) => `domain: ${host}`);
+        return ok(
+          mine.length > 0
+            ? mine.join("\n\n")
+            : "There are no custom domains connected to this bucket."
+        );
       },
       "r2 bucket domain add": (args) => {
         const host = args[args.indexOf("--domain") + 1];
-        if (domains.has(host)) return fail("The domain is already in use by a bucket.");
+        if (domains.has(host))
+          return fail("The domain is already in use by a bucket.");
         domains.set(host, args[4]);
         return ok();
       },
-      "r2 bucket cors set": () => (state.failCors ? fail("cors exploded") : ok()),
+      "r2 bucket cors set": () =>
+        state.failCors ? fail("cors exploded") : ok(),
     };
     return { handlers, state, domains };
   }
@@ -671,23 +957,63 @@ describe("cloudflare --media", () => {
     const runner = fakeRunner(MEDIA_OK);
     let cors: unknown;
     const wrapped: Runner = async (args, options) => {
-      if (args[2] === "cors") cors = JSON.parse(readFileSync(args[args.indexOf("--file") + 1], "utf8"));
+      if (args[2] === "cors")
+        cors = JSON.parse(
+          readFileSync(args[args.indexOf("--file") + 1], "utf8")
+        );
       return runner.run(args, options);
     };
-    const code = await connect(MEDIA, { cwd: dir, run: wrapped, io: session().io, env: {}, compatibilityDate: NEWEST_DATE });
+    const code = await connect(MEDIA, {
+      cwd: dir,
+      run: wrapped,
+      io: session().io,
+      env: {},
+      compatibilityDate: NEWEST_DATE,
+    });
     expect(code).toBe(0);
-    expect(readJson("project.config.json").mediaUrl).toBe("https://acme-media.example.com");
+    expect(readJson("project.config.json").mediaUrl).toBe(
+      "https://acme-media.example.com"
+    );
     expect(runner.calls.map((c) => c.args)).toEqual([
       ["r2", "bucket", "create", "acme-media"],
       ["r2", "bucket", "domain", "list", "acme-media"],
-      ["r2", "bucket", "domain", "add", "acme-media", "--domain", "acme-media.example.com", "--zone-id", "zone1", "--force"],
-      ["r2", "bucket", "cors", "set", "acme-media", "--file", expect.stringMatching(/cors\.json$/), "--force"],
+      [
+        "r2",
+        "bucket",
+        "domain",
+        "add",
+        "acme-media",
+        "--domain",
+        "acme-media.example.com",
+        "--zone-id",
+        "zone1",
+        "--force",
+      ],
+      [
+        "r2",
+        "bucket",
+        "cors",
+        "set",
+        "acme-media",
+        "--file",
+        expect.stringMatching(/cors\.json$/),
+        "--force",
+      ],
     ]);
     expect(cors).toEqual({
       rules: [
         {
-          allowed: { origins: ["*"], methods: ["GET", "HEAD"], headers: ["Range", "Content-Type"] },
-          exposeHeaders: ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+          allowed: {
+            origins: ["*"],
+            methods: ["GET", "HEAD"],
+            headers: ["Range", "Content-Type"],
+          },
+          exposeHeaders: [
+            "Content-Length",
+            "Content-Range",
+            "Accept-Ranges",
+            "ETag",
+          ],
           maxAgeSeconds: 86400,
         },
       ],
@@ -697,18 +1023,29 @@ describe("cloudflare --media", () => {
   test("runs from an empty directory with the account in the environment, whatever wrangler.jsonc says", async () => {
     // wrangler.jsonc names account A. The run is told B. Wrangler would act on A if it ran here.
     await run(CF.map((v) => (v === "abc" ? "A" : v)));
-    const seen: { cwd?: string; files: string[]; env?: Record<string, string> }[] = [];
+    const seen: {
+      cwd?: string;
+      files: string[];
+      env?: Record<string, string>;
+    }[] = [];
     const runner = fakeRunner(MEDIA_OK);
-    const code = await connect(MEDIA.map((v) => (v === "abc" ? "B" : v)), {
-      cwd: dir,
-      run: async (args, options) => {
-        seen.push({ cwd: options?.cwd, files: options?.cwd ? readdirSync(options.cwd) : [], env: options?.env });
-        return runner.run(args, options);
-      },
-      io: session().io,
-      env: {},
-      compatibilityDate: NEWEST_DATE,
-    });
+    const code = await connect(
+      MEDIA.map((v) => (v === "abc" ? "B" : v)),
+      {
+        cwd: dir,
+        run: async (args, options) => {
+          seen.push({
+            cwd: options?.cwd,
+            files: options?.cwd ? readdirSync(options.cwd) : [],
+            env: options?.env,
+          });
+          return runner.run(args, options);
+        },
+        io: session().io,
+        env: {},
+        compatibilityDate: NEWEST_DATE,
+      }
+    );
     expect(code).toBe(0);
     expect(readJson("wrangler.jsonc").account_id).toBe("B");
     expect(seen).toHaveLength(4);
@@ -723,7 +1060,10 @@ describe("cloudflare --media", () => {
 
   test("takes the zone ID from WF_ZONE_ID", async () => {
     const runner = fakeRunner(MEDIA_OK);
-    const { code } = await run([...CF, "--media"], { runner, env: { WF_ZONE_ID: "envzone" } });
+    const { code } = await run([...CF, "--media"], {
+      runner,
+      env: { WF_ZONE_ID: "envzone" },
+    });
     expect(code).toBe(0);
     expect(runner.calls[2].args).toContain("envzone");
   });
@@ -733,24 +1073,35 @@ describe("cloudflare --media", () => {
     ["r2 bucket domain list", "Listing the R2 bucket's custom domains", 2],
     ["r2 bucket domain add", "Attaching the custom domain", 3],
     ["r2 bucket cors set", "Setting CORS", 4],
-  ])("a failure at %s names the step and leaves everything unchanged", async (key, step, callCount) => {
-    // Start from a connected project so there is a mediaUrl to protect.
-    await run(CF);
-    const before = snapshot();
+  ])(
+    "a failure at %s names the step and leaves everything unchanged",
+    async (key, step, callCount) => {
+      // Start from a connected project so there is a mediaUrl to protect.
+      await run(CF);
+      const before = snapshot();
 
-    const runner = fakeRunner({ ...MEDIA_OK, [key]: () => fail("nope from cloudflare") });
-    const { code, io } = await run(MEDIA, { runner });
-    expect(code).toBe(1);
-    expect(io.err.join("\n")).toContain(step as string);
-    expect(io.err.join("\n")).toContain("nope from cloudflare");
-    expect(io.err.join("\n")).toContain("may already have changed your Cloudflare account");
-    expect(runner.calls).toHaveLength(callCount as number);
-    expect(snapshot()).toEqual(before);
-    expect(readJson("project.config.json").mediaUrl).toBeNull();
-  });
+      const runner = fakeRunner({
+        ...MEDIA_OK,
+        [key]: () => fail("nope from cloudflare"),
+      });
+      const { code, io } = await run(MEDIA, { runner });
+      expect(code).toBe(1);
+      expect(io.err.join("\n")).toContain(step as string);
+      expect(io.err.join("\n")).toContain("nope from cloudflare");
+      expect(io.err.join("\n")).toContain(
+        "may already have changed your Cloudflare account"
+      );
+      expect(runner.calls).toHaveLength(callCount as number);
+      expect(snapshot()).toEqual(before);
+      expect(readJson("project.config.json").mediaUrl).toBeNull();
+    }
+  );
 
   test("a failure on a fresh folder writes nothing at all", async () => {
-    const runner = fakeRunner({ ...MEDIA_OK, "r2 bucket cors set": () => fail("x") });
+    const runner = fakeRunner({
+      ...MEDIA_OK,
+      "r2 bucket cors set": () => fail("x"),
+    });
     expect((await run(MEDIA, { runner })).code).toBe(1);
     expect(readdirSync(dir)).toEqual([]);
   });
@@ -769,7 +1120,9 @@ describe("cloudflare --media", () => {
     const second = await run(MEDIA, { runner });
     expect(second.code).toBe(0);
     expect(second.io.out.join("\n")).toContain("already attached");
-    expect(readJson("project.config.json").mediaUrl).toBe("https://acme-media.example.com");
+    expect(readJson("project.config.json").mediaUrl).toBe(
+      "https://acme-media.example.com"
+    );
     expect(runner.calls.filter((c) => c.args[3] === "add")).toHaveLength(1);
   });
 
@@ -796,7 +1149,10 @@ describe("cloudflare --media", () => {
   test("a longer hostname in the list does not count as this one", async () => {
     const runner = fakeRunner({
       ...MEDIA_OK,
-      "r2 bucket domain list": () => ok("domain: xacme-media.example.com\n\ndomain: acme-media.example.com.evil.io"),
+      "r2 bucket domain list": () =>
+        ok(
+          "domain: xacme-media.example.com\n\ndomain: acme-media.example.com.evil.io"
+        ),
     });
     const { code } = await run(MEDIA, { runner });
     expect(code).toBe(0);
@@ -804,7 +1160,10 @@ describe("cloudflare --media", () => {
   });
 
   test("a different failure from create is not mistaken for an existing bucket", async () => {
-    const runner = fakeRunner({ ...MEDIA_OK, "r2 bucket create": () => fail("Authentication error [code: 10000]") });
+    const runner = fakeRunner({
+      ...MEDIA_OK,
+      "r2 bucket create": () => fail("Authentication error [code: 10000]"),
+    });
     expect((await run(MEDIA, { runner })).code).toBe(1);
   });
 

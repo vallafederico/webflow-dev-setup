@@ -72,7 +72,9 @@ function createIo(): Io {
     interactive,
     async ask(question, fallback) {
       rl ??= createInterface({ input: process.stdin, output: process.stdout });
-      const answer = await rl.question(`${question}${fallback ? ` [${fallback}]` : ""}: `);
+      const answer = await rl.question(
+        `${question}${fallback ? ` [${fallback}]` : ""}: `
+      );
       return answer.trim();
     },
     log: (message) => console.log(message),
@@ -83,7 +85,10 @@ function createIo(): Io {
 
 function wranglerBin(cwd: string): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  const found = [join(cwd, "node_modules/.bin/wrangler"), join(here, "../node_modules/.bin/wrangler")];
+  const found = [
+    join(cwd, "node_modules/.bin/wrangler"),
+    join(here, "../node_modules/.bin/wrangler"),
+  ];
   return found.find(existsSync) ?? "wrangler";
 }
 
@@ -104,7 +109,9 @@ export function createRunner(cwd: string): Runner {
       child.stderr.on("data", (chunk) => {
         stderr += chunk;
       });
-      child.on("error", (error) => done({ code: 127, stdout, stderr: String(error) }));
+      child.on("error", (error) =>
+        done({ code: 127, stdout, stderr: String(error) })
+      );
       child.on("close", (code) => done({ code: code ?? 1, stdout, stderr }));
     });
 }
@@ -192,7 +199,8 @@ export function validateSuffix(input: string): string {
 function validateId(label: string) {
   return (input: string): string => {
     const id = input.trim();
-    if (!ID.test(id)) throw new UserError(`"${input}" is not a valid ${label}.`);
+    if (!ID.test(id))
+      throw new UserError(`"${input}" is not a valid ${label}.`);
     return id;
   };
 }
@@ -216,7 +224,8 @@ async function resolveValue(io: Io, spec: ValueSpec): Promise<string> {
     try {
       return spec.validate(spec.given.value);
     } catch (error) {
-      if (error instanceof UserError) throw new UserError(`${spec.given.source}: ${error.message}`);
+      if (error instanceof UserError)
+        throw new UserError(`${spec.given.source}: ${error.message}`);
       throw error;
     }
   }
@@ -230,7 +239,11 @@ async function resolveValue(io: Io, spec: ValueSpec): Promise<string> {
 
   const fallback = spec.existing ?? spec.suggestion;
   for (;;) {
-    const answer = (await io.ask(`${spec.label}${spec.hint ? ` (${spec.hint})` : ""}`, fallback)) || fallback;
+    const answer =
+      (await io.ask(
+        `${spec.label}${spec.hint ? ` (${spec.hint})` : ""}`,
+        fallback
+      )) || fallback;
     try {
       if (!answer) throw new UserError(`${spec.label} is required.`);
       return spec.validate(answer);
@@ -246,14 +259,18 @@ interface Account {
   name?: string;
 }
 
-function parseWhoami(stdout: string): { loggedIn: boolean; accounts: Account[] } | null {
+function parseWhoami(
+  stdout: string
+): { loggedIn: boolean; accounts: Account[] } | null {
   const start = stdout.indexOf("{");
   const end = stdout.lastIndexOf("}");
   if (start === -1 || end < start) return null;
   try {
     const parsed = JSON.parse(stdout.slice(start, end + 1));
     const accounts: Account[] = Array.isArray(parsed.accounts)
-      ? parsed.accounts.filter((account: Account) => typeof account?.id === "string")
+      ? parsed.accounts.filter(
+          (account: Account) => typeof account?.id === "string"
+        )
       : [];
     return { loggedIn: parsed.loggedIn === true, accounts };
   } catch {
@@ -270,7 +287,8 @@ async function resolveAccount(
     try {
       return validateId("account ID")(given);
     } catch (error) {
-      if (error instanceof UserError) throw new UserError(`--account-id: ${error.message}`);
+      if (error instanceof UserError)
+        throw new UserError(`--account-id: ${error.message}`);
       throw error;
     }
   }
@@ -281,7 +299,8 @@ async function resolveAccount(
     "Wrangler is not logged in. Run `pnpm wrangler login` (or set CLOUDFLARE_API_TOKEN), then run this again. To skip the login check, pass --account-id."
   );
   if (!whoami) {
-    if (/not (authenticated|logged in)/i.test(result.stdout + result.stderr)) throw noLogin;
+    if (/not (authenticated|logged in)/i.test(result.stdout + result.stderr))
+      throw noLogin;
     throw new UserError(
       `Could not read \`wrangler whoami\`: ${(result.stderr || result.stdout).trim() || `exit code ${result.code}`}\nPass --account-id to skip this check.`
     );
@@ -290,7 +309,9 @@ async function resolveAccount(
 
   const { accounts } = whoami;
   if (accounts.length === 0) {
-    throw new UserError("Wrangler is logged in but listed no accounts. Pass --account-id.");
+    throw new UserError(
+      "Wrangler is logged in but listed no accounts. Pass --account-id."
+    );
   }
   if (existing && !accounts.some((a) => a.id === existing)) {
     throw new UserError(
@@ -299,7 +320,9 @@ async function resolveAccount(
   }
   if (accounts.length === 1) return accounts[0].id;
 
-  const listing = accounts.map((a, i) => `  ${i + 1}. ${a.name ?? "(unnamed)"}  ${a.id}`).join("\n");
+  const listing = accounts
+    .map((a, i) => `  ${i + 1}. ${a.name ?? "(unnamed)"}  ${a.id}`)
+    .join("\n");
   const fallback = existing;
   if (!io.interactive) {
     if (fallback) return fallback;
@@ -307,10 +330,14 @@ async function resolveAccount(
       `Wrangler is logged in to several accounts, and the base domain must be on the one you pick. Pass --account-id.\n${listing}`
     );
   }
-  io.log(`Wrangler is logged in to several accounts. The base domain must be active on the one you pick:\n${listing}`);
+  io.log(
+    `Wrangler is logged in to several accounts. The base domain must be active on the one you pick:\n${listing}`
+  );
   for (;;) {
-    const answer = (await io.ask("Account number or ID", fallback)) || fallback || "";
-    const match = accounts[Number(answer) - 1] ?? accounts.find((a) => a.id === answer);
+    const answer =
+      (await io.ask("Account number or ID", fallback)) || fallback || "";
+    const match =
+      accounts[Number(answer) - 1] ?? accounts.find((a) => a.id === answer);
     if (match) return match.id;
     io.error(`"${answer}" is not in the list.`);
   }
@@ -323,7 +350,9 @@ function readJsonc(path: string): Record<string, unknown> | null {
   try {
     parsed = Bun.JSONC.parse(text);
   } catch (error) {
-    throw new UserError(`${basename(path)} is not valid JSON: ${error}. Fix it or delete it, then run this again.`);
+    throw new UserError(
+      `${basename(path)} is not valid JSON: ${error}. Fix it or delete it, then run this again.`
+    );
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new UserError(`${basename(path)} must contain a JSON object.`);
@@ -332,7 +361,9 @@ function readJsonc(path: string): Record<string, unknown> | null {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 /** The existing list in its order, then any wanted entries it lacks. */
@@ -341,23 +372,33 @@ function union<T>(current: unknown, wanted: T[]): unknown[] {
   return [...list, ...wanted.filter((item) => !list.includes(item))];
 }
 
-const routePattern = (route: unknown): unknown => (typeof route === "string" ? route : asRecord(route).pattern);
+const routePattern = (route: unknown): unknown =>
+  typeof route === "string" ? route : asRecord(route).pattern;
 
 /** Routes added by hand, minus the managed one and the one an earlier run wrote for the old name. */
 function keptRoutes(current: unknown, drop: (string | undefined)[]): unknown[] {
-  return (Array.isArray(current) ? current : []).filter((route) => !drop.includes(routePattern(route) as string));
+  return (Array.isArray(current) ? current : []).filter(
+    (route) => !drop.includes(routePattern(route) as string)
+  );
 }
 
 /** The custom domain an earlier `connect` run wrote, so renaming a project doesn't strand it. */
-function oldRoute(existing: ProjectConfig | null, wasCloudflare: boolean): string | undefined {
-  return wasCloudflare && existing ? existing.deployUrl.replace("https://", "") : undefined;
+function oldRoute(
+  existing: ProjectConfig | null,
+  wasCloudflare: boolean
+): string | undefined {
+  return wasCloudflare && existing
+    ? existing.deployUrl.replace("https://", "")
+    : undefined;
 }
 
 /** The newest date the bundled workerd in Wrangler 4.155 understands. Used when it can't be read. */
 export const FALLBACK_COMPATIBILITY_DATE = "2026-10-23";
 
 /** workerd versions are `1.YYYYMMDD.patch`, and the date is its newest supported compatibility date. */
-export function compatibilityDateFromVersion(version: string): string | undefined {
+export function compatibilityDateFromVersion(
+  version: string
+): string | undefined {
   const match = version.match(/^\d+\.(\d{4})(\d{2})(\d{2})\./);
   return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
 }
@@ -369,8 +410,14 @@ export function compatibilityDateFromVersion(version: string): string | undefine
 export function workerdCompatibilityDate(): string {
   try {
     // workerd isn't hoisted by pnpm, so resolve it from where wrangler lives.
-    const fromWrangler = createRequire(createRequire(import.meta.url).resolve("wrangler/package.json"));
-    return compatibilityDateFromVersion(fromWrangler("workerd/package.json").version) ?? FALLBACK_COMPATIBILITY_DATE;
+    const fromWrangler = createRequire(
+      createRequire(import.meta.url).resolve("wrangler/package.json")
+    );
+    return (
+      compatibilityDateFromVersion(
+        fromWrangler("workerd/package.json").version
+      ) ?? FALLBACK_COMPATIBILITY_DATE
+    );
   } catch {
     return FALLBACK_COMPATIBILITY_DATE;
   }
@@ -382,14 +429,25 @@ function json(value: unknown): string {
 
 type Flags = ReturnType<typeof parseFlags>;
 
-const STRING_FLAGS = ["--name", "--domain", "--subdomain", "--account-id", "--suffix", "--zone-id"];
+const STRING_FLAGS = [
+  "--name",
+  "--domain",
+  "--subdomain",
+  "--account-id",
+  "--suffix",
+  "--zone-id",
+];
 
 /** Joins `--suffix -team.vercel.app` into `--suffix=-team.vercel.app`, which parseArgs would otherwise reject. */
 function joinFlagValues(argv: string[]): string[] {
   const joined: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const next = argv[i + 1];
-    if (STRING_FLAGS.includes(argv[i]) && next !== undefined && !next.startsWith("--")) {
+    if (
+      STRING_FLAGS.includes(argv[i]) &&
+      next !== undefined &&
+      !next.startsWith("--")
+    ) {
       joined.push(`${argv[i]}=${next}`);
       i++;
     } else {
@@ -443,11 +501,16 @@ async function planCloudflare(
   const { io, env, cwd } = deps;
   const wranglerPath = resolve(cwd, WRANGLER_FILE);
   const currentWrangler = readJsonc(wranglerPath);
-  const currentText = currentWrangler ? readFileSync(wranglerPath, "utf8") : undefined;
+  const currentText = currentWrangler
+    ? readFileSync(wranglerPath, "utf8")
+    : undefined;
   const wasCloudflare = existing?.host === "cloudflare";
 
   const domainPrefix = wasCloudflare ? `https://${existing.name}.` : undefined;
-  const existingDomain = domainPrefix && existing?.deployUrl.startsWith(domainPrefix) ? existing.deployUrl.slice(domainPrefix.length) : undefined;
+  const existingDomain =
+    domainPrefix && existing?.deployUrl.startsWith(domainPrefix)
+      ? existing.deployUrl.slice(domainPrefix.length)
+      : undefined;
   const domain = await resolveValue(io, {
     flag: "--domain",
     label: "Base domain",
@@ -460,7 +523,9 @@ async function planCloudflare(
   });
 
   const existingSubdomain = wasCloudflare
-    ? existing.previewHostSuffix.match(/^-[a-z0-9-]+\.([a-z0-9-]+)\.workers\.dev$/)?.[1]
+    ? existing.previewHostSuffix.match(
+        /^-[a-z0-9-]+\.([a-z0-9-]+)\.workers\.dev$/
+      )?.[1]
     : undefined;
   const subdomain = await resolveValue(io, {
     flag: "--subdomain",
@@ -517,11 +582,16 @@ async function planCloudflare(
   const newest = deps.compatibilityDate();
   let compatibilityDate = newest;
   const currentDate = currentWrangler?.compatibility_date;
-  if (typeof currentDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(currentDate)) {
+  if (
+    typeof currentDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(currentDate)
+  ) {
     if (currentDate <= newest) {
       compatibilityDate = currentDate;
     } else {
-      io.log(`Note: compatibility_date ${currentDate} is newer than the local workerd supports, so it was lowered to ${newest}.`);
+      io.log(
+        `Note: compatibility_date ${currentDate} is newer than the local workerd supports, so it was lowered to ${newest}.`
+      );
     }
   }
   const route = `${name}.${domain}`;
@@ -530,32 +600,47 @@ async function planCloudflare(
     name,
     account_id: accountId,
     compatibility_date: compatibilityDate,
-    compatibility_flags: union(currentWrangler?.compatibility_flags, ["nodejs_compat"]),
+    compatibility_flags: union(currentWrangler?.compatibility_flags, [
+      "nodejs_compat",
+    ]),
     main: ".generated/worker.ts",
     // Hand-added asset settings such as html_handling survive. directory is ours.
     assets: {
       ...currentAssets,
       directory: "./dist",
-      run_worker_first: currentAssets.run_worker_first === true ? true : union(currentAssets.run_worker_first, ["/api/*"]),
+      run_worker_first:
+        currentAssets.run_worker_first === true
+          ? true
+          : union(currentAssets.run_worker_first, ["/api/*"]),
     },
     routes: [
       { pattern: route, custom_domain: true },
-      ...keptRoutes(currentWrangler?.routes, [route, oldRoute(existing, wasCloudflare)]),
+      ...keptRoutes(currentWrangler?.routes, [
+        route,
+        oldRoute(existing, wasCloudflare),
+      ]),
     ],
     preview_urls: true,
     previews: currentWrangler?.previews ?? {},
   };
   // Keep anything else the user added by hand, such as vars or bindings.
-  const extras = Object.entries(currentWrangler ?? {}).filter(([key]) => !(key in managed));
+  const extras = Object.entries(currentWrangler ?? {}).filter(
+    ([key]) => !(key in managed)
+  );
   const wrangler = { ...managed, ...Object.fromEntries(extras) };
   const wranglerText = json(wrangler);
 
   if (currentText !== undefined && currentText !== wranglerText) {
-    io.log(`Note: ${WRANGLER_FILE} is rewritten as plain JSON with a fixed key order, so any comments and formatting in it are not kept.`);
+    io.log(
+      `Note: ${WRANGLER_FILE} is rewritten as plain JSON with a fixed key order, so any comments and formatting in it are not kept.`
+    );
   }
 
   return {
-    files: { [PROJECT_CONFIG_FILE]: json(config), [WRANGLER_FILE]: wranglerText },
+    files: {
+      [PROJECT_CONFIG_FILE]: json(config),
+      [WRANGLER_FILE]: wranglerText,
+    },
     summary: [
       `${PROJECT_CONFIG_FILE}  deployUrl ${config.deployUrl}`,
       `${WRANGLER_FILE}  account_id ${accountId}`,
@@ -584,7 +669,8 @@ async function planVercel(
     label: "Team preview suffix",
     hint: "like -your-team.vercel.app, see Vercel project settings, Domains",
     given: { value: flags.suffix, source: "--suffix" },
-    existing: existing?.host === "vercel" ? existing.previewHostSuffix : undefined,
+    existing:
+      existing?.host === "vercel" ? existing.previewHostSuffix : undefined,
     validate: validateSuffix,
   });
 
@@ -608,7 +694,10 @@ async function planVercel(
 }
 
 /** Returns the exit code: 0 on success, 1 for a user error or a failed step. */
-export async function connect(argv: string[], overrides: Partial<ConnectDeps> = {}): Promise<number> {
+export async function connect(
+  argv: string[],
+  overrides: Partial<ConnectDeps> = {}
+): Promise<number> {
   const io = overrides.io ?? createIo();
   const cwd = overrides.cwd ?? process.cwd();
   const deps: ConnectDeps = {
@@ -628,7 +717,10 @@ export async function connect(argv: string[], overrides: Partial<ConnectDeps> = 
       );
     } else if (error instanceof UserError) {
       io.error(error.message);
-    } else if (error instanceof Error && (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
+    } else if (
+      error instanceof Error &&
+      (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")
+    ) {
       io.error(`${error.message}\n\n${USAGE}`);
     } else {
       throw error;
@@ -649,7 +741,9 @@ async function execute(argv: string[], deps: ConnectDeps): Promise<number> {
 
   const [host, ...extra] = positionals;
   if ((host !== "cloudflare" && host !== "vercel") || extra.length > 0) {
-    io.error(`${host ? `Unknown host "${positionals.join(" ")}".` : "Missing host."}\n\n${USAGE}`);
+    io.error(
+      `${host ? `Unknown host "${positionals.join(" ")}".` : "Missing host."}\n\n${USAGE}`
+    );
     return 1;
   }
   for (const [flag, owner] of Object.entries(FLAG_HOSTS)) {
@@ -662,16 +756,25 @@ async function execute(argv: string[], deps: ConnectDeps): Promise<number> {
   try {
     existing = readProjectConfig(cwd);
   } catch (error) {
-    throw new UserError(`${error instanceof Error ? error.message : error}\nFix or delete ${PROJECT_CONFIG_FILE}, then run this again.`);
+    throw new UserError(
+      `${error instanceof Error ? error.message : error}\nFix or delete ${PROJECT_CONFIG_FILE}, then run this again.`
+    );
   }
 
   if (existing && existing.host !== host) {
     const message = `${PROJECT_CONFIG_FILE} is connected to ${existing.host}. Switching to ${host} replaces its URLs; ${existing.host}'s own config files stay.`;
     if (!flags.yes) {
-      if (!io.interactive) throw new UserError(`${message}\nNothing was changed. Pass --yes to switch.`);
+      if (!io.interactive)
+        throw new UserError(
+          `${message}\nNothing was changed. Pass --yes to switch.`
+        );
       io.log(message);
-      const answer = await io.ask(`Switch to ${host}? Type yes to continue`, "no");
-      if (!/^y(es)?$/i.test(answer)) throw new UserError("Nothing was changed.");
+      const answer = await io.ask(
+        `Switch to ${host}? Type yes to continue`,
+        "no"
+      );
+      if (!/^y(es)?$/i.test(answer))
+        throw new UserError("Nothing was changed.");
     }
   }
 
@@ -692,8 +795,11 @@ async function execute(argv: string[], deps: ConnectDeps): Promise<number> {
       : await planVercel(deps, flags, name, existing, mediaUrl);
 
   // Checked against the contract before anything is written.
-  const problems = validateProjectConfig(JSON.parse(plan.files[PROJECT_CONFIG_FILE]));
-  if (problems.length > 0) throw new UserError(`Generated an invalid config: ${problems.join("; ")}`);
+  const problems = validateProjectConfig(
+    JSON.parse(plan.files[PROJECT_CONFIG_FILE])
+  );
+  if (problems.length > 0)
+    throw new UserError(`Generated an invalid config: ${problems.join("; ")}`);
 
   const changed: string[] = [];
   for (const [file, content] of Object.entries(plan.files)) {
@@ -709,7 +815,9 @@ async function execute(argv: string[], deps: ConnectDeps): Promise<number> {
       : `Connected "${name}" to ${host}. Nothing changed.`
   );
   for (const line of plan.summary) io.log(`  ${line}`);
-  io.log(`\nNext steps:\n${plan.steps.map((step, i) => `  ${i + 1}. ${step}`).join("\n")}`);
+  io.log(
+    `\nNext steps:\n${plan.steps.map((step, i) => `  ${i + 1}. ${step}`).join("\n")}`
+  );
   return 0;
 }
 

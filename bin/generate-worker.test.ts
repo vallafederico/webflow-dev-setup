@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateWorker, listApiRoutes } from "./generate-worker";
@@ -59,7 +65,14 @@ export async function POST(request: Request) { return new Response(await request
   test("a route without the method gives 405 with Allow", async () => {
     api({ "test.ts": "export const GET = () => new Response('x');" });
     const worker = await load();
-    for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]) {
+    for (const method of [
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+      "HEAD",
+    ]) {
       const res = await call(worker, "/api/test", method);
       expect(res.status).toBe(405);
       expect(res.headers.get("allow")).toBe("GET");
@@ -69,7 +82,8 @@ export async function POST(request: Request) { return new Response(await request
   test("method names outside the allowlist are never dispatched", async () => {
     // `Object.hasOwn` is true for these, so only the allowlist keeps them out.
     api({
-      "test.ts": "export const GET = () => new Response('x'); export const TRACE = () => new Response('trace');",
+      "test.ts":
+        "export const GET = () => new Response('x'); export const TRACE = () => new Response('trace');",
     });
     const worker = await load();
     expect((await call(worker, "/api/test", "TRACE")).status).toBe(405);
@@ -103,7 +117,9 @@ export async function POST(request: Request) { return new Response(await request
   });
 
   test("a throwing handler gives 500", async () => {
-    api({ "boom.ts": "export const GET = () => { throw new Error('boom'); };" });
+    api({
+      "boom.ts": "export const GET = () => { throw new Error('boom'); };",
+    });
     const worker = await load();
     const original = console.error;
     console.error = () => {};
@@ -126,9 +142,16 @@ export async function POST(request: Request) { return new Response(await request
     });
     expect(await listApiRoutes(join(dir, "api"))).toEqual(["a"]);
     const worker = await load();
-    expect(readFileSync(join(dir, ".generated", "worker.ts"), "utf8")).not.toContain("foo.test");
+    expect(
+      readFileSync(join(dir, ".generated", "worker.ts"), "utf8")
+    ).not.toContain("foo.test");
     expect((await call(worker, "/api/a")).status).toBe(200);
-    for (const path of ["/api/_shared", "/api/.hidden", "/api/foo.test", "/api/foo"]) {
+    for (const path of [
+      "/api/_shared",
+      "/api/.hidden",
+      "/api/foo.test",
+      "/api/foo",
+    ]) {
       expect((await call(worker, path)).status).toBe(404);
     }
   });
@@ -136,7 +159,8 @@ export async function POST(request: Request) { return new Response(await request
   test("HEAD is 405 unless the route exports HEAD, with no GET fallback", async () => {
     api({
       "get.ts": "export const GET = () => new Response('x');",
-      "head.ts": "export const HEAD = () => new Response(null, { headers: { 'x-head': '1' } });",
+      "head.ts":
+        "export const HEAD = () => new Response(null, { headers: { 'x-head': '1' } });",
     });
     const worker = await load();
     const noHead = await call(worker, "/api/get", "HEAD");
@@ -153,7 +177,10 @@ export async function POST(request: Request) { return new Response(await request
       "b.d.ts": "export {};",
       "notes.md": "x",
     });
-    writeFileSync(join(dir, "api", "utils", "helper.ts"), "export const GET = () => new Response('h');");
+    writeFileSync(
+      join(dir, "api", "utils", "helper.ts"),
+      "export const GET = () => new Response('h');"
+    );
     expect(await listApiRoutes(join(dir, "api"))).toEqual(["a"]);
     const worker = await load();
     expect((await call(worker, "/api/a")).status).toBe(200);

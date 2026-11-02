@@ -301,8 +301,8 @@ if (ENABLE_TICK_LOGGING) {
         domInteractive > 0
           ? domInteractive
           : domComplete > 0
-          ? domComplete
-          : null;
+            ? domComplete
+            : null;
     } else if (performance.getEntriesByType) {
       const navEntries = performance.getEntriesByType(
         "navigation"
@@ -573,8 +573,8 @@ function analyzeFrameDrop(frameTime: number, frameNumber: number) {
           mark.duration > 16
             ? "#ef4444"
             : mark.duration > 8
-            ? "#f59e0b"
-            : "#6b7280";
+              ? "#f59e0b"
+              : "#6b7280";
         console.log(
           `%c${i + 1}. ${mark.name}%c ${mark.duration.toFixed(2)}ms`,
           `color: ${color}; font-weight: bold;`,
@@ -591,8 +591,8 @@ function analyzeFrameDrop(frameTime: number, frameNumber: number) {
           fn.duration > 16
             ? "#ef4444"
             : fn.duration > 8
-            ? "#f59e0b"
-            : "#6b7280";
+              ? "#f59e0b"
+              : "#6b7280";
         console.log(
           `%c${i + 1}. ${fn.name}%c ${fn.duration.toFixed(2)}ms`,
           `color: ${color}; font-weight: bold;`,

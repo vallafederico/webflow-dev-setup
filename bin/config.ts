@@ -9,8 +9,8 @@ const cssEntrypoints = ["src/styles/app.css"];
 const appFile = existsSync(resolve("src/app.ts"))
   ? "src/app.ts"
   : existsSync(resolve("src/app.js"))
-  ? "src/app.js"
-  : null;
+    ? "src/app.js"
+    : null;
 
 const pages = getPageFiles().map((page) => {
   return `src/pages/${page}`;

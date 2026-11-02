@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBunDefine, getPublicAssetOriginForBuild } from "./public-asset-origin";
+import {
+  getBunDefine,
+  getPublicAssetOriginForBuild,
+} from "./public-asset-origin";
 
 const ENV_KEYS = [
   "NODE_ENV",
@@ -124,7 +127,9 @@ describe("getBunDefine", () => {
     writeConfig();
     process.env.PUBLIC_ASSET_ORIGIN = "https://override.example.com";
     const define = getBunDefine();
-    expect(define.__PUBLIC_ASSET_ORIGIN__).toBe('"https://override.example.com"');
+    expect(define.__PUBLIC_ASSET_ORIGIN__).toBe(
+      '"https://override.example.com"'
+    );
     expect(define.__PREVIEW_HOST_SUFFIX__).toBe('"-acme.team.workers.dev"');
   });
 
@@ -153,7 +158,9 @@ describe("getBunDefine", () => {
       expect(define.__MEDIA_ORIGIN__).toBe('""');
       expect(define.__PREVIEW_HOST_SUFFIX__).toBe('""');
       expect(define.__PUBLIC_ASSET_ORIGIN__).toBe('"http://localhost:6545"');
-      expect(String(error.mock.calls[0][0])).toContain("project.config.json is invalid");
+      expect(String(error.mock.calls[0][0])).toContain(
+        "project.config.json is invalid"
+      );
     } finally {
       error.mockRestore();
     }

@@ -1,10 +1,11 @@
 import type { SpawnOptions } from "bun";
 
-const spawnOptions: SpawnOptions.BaseOptions<"inherit", "inherit", "inherit"> = {
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-};
+const spawnOptions: SpawnOptions.BaseOptions<"inherit", "inherit", "inherit"> =
+  {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  };
 
 const run = async () => {
   Bun.spawn(["bun", "run", "dev"], spawnOptions);

@@ -255,8 +255,8 @@ export function saveManifestFiles(manifest: BuildManifest) {
                 (file) => `
                 <div class="file-item">
                     <a href="${file.path}" target="_blank" class="file-path">${
-                  file.path
-                }</a>
+                      file.path
+                    }</a>
                     <span class="file-info">
                         ${(file.size / 1024).toFixed(2)} KB • 
                         ${file.type.toUpperCase()} • 
@@ -282,8 +282,8 @@ export function saveManifestFiles(manifest: BuildManifest) {
                 (file) => `
                 <div class="file-item">
                     <a href="${file.path}" target="_blank" class="file-path">${
-                  file.path
-                }</a>
+                      file.path
+                    }</a>
                     <span class="file-info">
                         ${(file.size / 1024).toFixed(2)} KB • 
                         ${file.type.toUpperCase()} • 
@@ -342,8 +342,8 @@ export function saveManifestFiles(manifest: BuildManifest) {
                 (file) => `
                 <div class="file-item">
                     <a href="${file.path}" target="_blank" class="file-path">${
-                  file.path
-                }</a>
+                      file.path
+                    }</a>
                     <span class="file-info">
                         ${(file.size / 1024).toFixed(2)} KB • 
                         ${file.type.toUpperCase()} • 

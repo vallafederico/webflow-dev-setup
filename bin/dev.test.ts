@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -35,10 +41,19 @@ afterEach(async () => {
 
 /** Starts `bin/dev.ts` in the temp project and resolves once its first build has finished. */
 async function startDev(): Promise<string> {
-  const env = { ...process.env, NODE_ENV: "development", WF_DEV_PORT: PORT } as Record<string, string | undefined>;
+  const env = {
+    ...process.env,
+    NODE_ENV: "development",
+    WF_DEV_PORT: PORT,
+  } as Record<string, string | undefined>;
   delete env.USE_SSL;
   delete env.PUBLIC_ASSET_ORIGIN;
-  proc = Bun.spawn(["bun", "run", DEV], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
+  proc = Bun.spawn(["bun", "run", DEV], {
+    cwd: dir,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
   let log = "";
   const read = async (stream: ReadableStream<Uint8Array>) => {
@@ -54,7 +69,8 @@ async function startDev(): Promise<string> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (log.includes("Build complete")) return log;
-    if (proc.exitCode !== null) throw new Error(`bin/dev.ts exited early:\n${log}`);
+    if (proc.exitCode !== null)
+      throw new Error(`bin/dev.ts exited early:\n${log}`);
     await Bun.sleep(50);
   }
   throw new Error(`bin/dev.ts never finished building:\n${log}`);
@@ -74,14 +90,19 @@ describe("bin/dev.ts", () => {
     );
     await startDev();
     const js = readFileSync(join(dir, "dist", "app.js"), "utf8");
-    expect(js).not.toMatch(/__(PUBLIC_ASSET|MEDIA|API_DEV)_ORIGIN__|__PREVIEW_HOST_SUFFIX__/);
+    expect(js).not.toMatch(
+      /__(PUBLIC_ASSET|MEDIA|API_DEV)_ORIGIN__|__PREVIEW_HOST_SUFFIX__/
+    );
     expect(js).toContain(ORIGIN);
     expect(js).toContain("http://localhost:6546");
     expect(js).toContain("-acme.team.workers.dev");
   });
 
   test("an invalid config doesn't crash the server and the index shows the error", async () => {
-    writeFileSync(join(dir, "project.config.json"), JSON.stringify({ host: "netlify" }));
+    writeFileSync(
+      join(dir, "project.config.json"),
+      JSON.stringify({ host: "netlify" })
+    );
     const log = await startDev();
     expect(log).toContain("project.config.json is invalid");
     const html = await (await fetch(`${ORIGIN}/`)).text();
