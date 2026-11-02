@@ -2,8 +2,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Io, type RunResult, type Runner, connect, suggestName } from "./connect";
-import { parseJsonc } from "./connect/jsonc";
+import {
+  FALLBACK_COMPATIBILITY_DATE,
+  type Io,
+  type RunResult,
+  type Runner,
+  compatibilityDateFromVersion,
+  connect,
+  suggestName,
+  workerdCompatibilityDate,
+} from "./connect";
 import { validateProjectConfig } from "./project-config";
 
 let dir: string;
@@ -41,6 +49,7 @@ function fakeRunner(handlers: Record<string, Handler> = {}) {
 
 const MEDIA_OK: Record<string, Handler> = {
   "r2 bucket create": () => ok(),
+  "r2 bucket domain list": () => ok("There are no custom domains connected to this bucket."),
   "r2 bucket domain add": () => ok(),
   "r2 bucket cors set": () => ok(),
 };
@@ -68,12 +77,12 @@ function session(interactive = false, answers: string[] = []): Session {
   return { io, out, err };
 }
 
-const TODAY = () => new Date(2026, 10, 2);
+const NEWEST_DATE = () => "2026-10-23";
 
 async function run(argv: string[], options: { runner?: ReturnType<typeof fakeRunner>; io?: Session; env?: Record<string, string> } = {}) {
   const runner = options.runner ?? fakeRunner();
   const io = options.io ?? session();
-  const code = await connect(argv, { cwd: dir, run: runner.run, io: io.io, env: options.env ?? {}, today: TODAY });
+  const code = await connect(argv, { cwd: dir, run: runner.run, io: io.io, env: options.env ?? {}, compatibilityDate: NEWEST_DATE });
   return { code, runner, io };
 }
 
@@ -106,7 +115,7 @@ describe("cloudflare", () => {
         {
           name: "acme",
           account_id: "abc",
-          compatibility_date: "2026-11-02",
+          compatibility_date: "2026-10-23",
           compatibility_flags: ["nodejs_compat"],
           main: ".generated/worker.ts",
           assets: { directory: "./dist", run_worker_first: ["/api/*"] },
@@ -154,7 +163,35 @@ describe("cloudflare", () => {
     expect(readJson("wrangler.jsonc").compatibility_date).toBe("2025-01-15");
   });
 
-  test("keeps hand-added wrangler keys and reads commented JSONC", async () => {
+  test("an older existing compatibility_date is kept byte for byte, and a newer one is lowered", async () => {
+    await run(CF);
+    const wrangler = readJson("wrangler.jsonc");
+    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify({ ...wrangler, compatibility_date: "2026-01-01" }, null, 2)}\n`);
+    const kept = snapshot();
+    const same = await run(CF);
+    expect(snapshot()).toEqual(kept);
+    expect(same.io.out.join("\n")).not.toContain("lowered");
+
+    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify({ ...wrangler, compatibility_date: "2026-11-02" }, null, 2)}\n`);
+    const lowered = await run(CF);
+    expect(readJson("wrangler.jsonc").compatibility_date).toBe("2026-10-23");
+    expect(lowered.io.out.join("\n")).toContain("lowered to 2026-10-23");
+  });
+
+  test("a new project gets the workerd date, not today's", async () => {
+    await run(CF);
+    expect(readJson("wrangler.jsonc").compatibility_date).toBe("2026-10-23");
+  });
+
+  test("the workerd date comes from the installed workerd, with a fallback", () => {
+    expect(compatibilityDateFromVersion("1.20261023.1")).toBe("2026-10-23");
+    expect(compatibilityDateFromVersion("1.2026.1")).toBeUndefined();
+    expect(compatibilityDateFromVersion("nonsense")).toBeUndefined();
+    expect(workerdCompatibilityDate()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(FALLBACK_COMPATIBILITY_DATE).toBe("2026-10-23");
+  });
+
+  test("keeps hand-added wrangler keys, reads commented JSONC, and says it rewrites the file", async () => {
     writeFileSync(
       join(dir, "wrangler.jsonc"),
       `{\n  // set by hand\n  "compatibility_date": "2025-03-04",\n  "vars": { "A": "1", }, /* trailing */\n}\n`
@@ -165,7 +202,13 @@ describe("cloudflare", () => {
     expect(wrangler.compatibility_date).toBe("2025-03-04");
     expect(wrangler.vars).toEqual({ A: "1" });
     expect(Object.keys(wrangler).at(-1)).toBe("vars");
-    expect(io.out.join("\n")).toContain("comments are not kept");
+    expect(io.out.join("\n")).toContain("rewritten as plain JSON");
+  });
+
+  test("says nothing about rewriting when the file already matches", async () => {
+    await run(CF);
+    const { io } = await run(CF);
+    expect(io.out.join("\n")).not.toContain("rewritten");
   });
 
   test("an invalid wrangler.jsonc stops the run with no changes", async () => {
@@ -223,7 +266,7 @@ describe("cloudflare", () => {
       asked.push(`${question} [${fallback ?? ""}]`);
       return original(question, fallback);
     };
-    const code = await connect(["cloudflare", "--account-id", "abc"], { cwd: folder, run: fakeRunner().run, io: s.io, env: {}, today: TODAY });
+    const code = await connect(["cloudflare", "--account-id", "abc"], { cwd: folder, run: fakeRunner().run, io: s.io, env: {}, compatibilityDate: NEWEST_DATE });
     expect(code).toBe(0);
     expect(asked[0]).toContain("[my-site]");
     expect(asked[2]).toContain("Cloudflare dashboard under Workers");
@@ -290,6 +333,22 @@ describe("accounts", () => {
     expect(readJson("wrangler.jsonc").account_id).toBe("two");
   });
 
+  test("a login that does not list the recorded account asks for --account-id", async () => {
+    await run(CF);
+    const before = snapshot();
+    for (const ids of [["other"], ["other", "another"]]) {
+      const runner = fakeRunner({ whoami: () => whoami(...ids) });
+      const { code, io } = await run(noAccount, { runner });
+      expect(code).toBe(1);
+      expect(io.err.join("\n")).toContain("--account-id");
+      expect(io.err.join("\n")).toContain("abc");
+      expect(snapshot()).toEqual(before);
+    }
+    // Passing it is the confirmation.
+    expect((await run(CF.map((v) => (v === "abc" ? "other" : v)))).code).toBe(0);
+    expect(readJson("wrangler.jsonc").account_id).toBe("other");
+  });
+
   test("an unreadable whoami names the output and --account-id", async () => {
     const runner = fakeRunner({ whoami: () => fail("boom") });
     const { code, io } = await run(noAccount, { runner });
@@ -330,7 +389,23 @@ describe("vercel", () => {
     expect(snapshot()).toEqual(before);
   });
 
-  test.each(["yourteam.vercel.app", "vercel.app", "-", "-Team_x.vercel.app", "-a b.vercel.app"])("rejects the suffix %p", async (suffix) => {
+  test.each([
+    "yourteam.vercel.app",
+    "vercel.app",
+    "-",
+    "-Team_x.vercel.app",
+    "-a b.vercel.app",
+    // Valid for the shared contract regex, but each would widen the allowlist past one team.
+    ".vercel.app",
+    ".app",
+    "-vercel.app",
+    "-.vercel.app",
+    "-app",
+    "...",
+    "-team.vercel.app.evil.com",
+    "-a.b.vercel.app",
+    "-team-.vercel.app",
+  ])("rejects the suffix %p", async (suffix) => {
     const { code, io } = await run(["vercel", "--name", "acme", "--suffix", suffix]);
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("--suffix");
@@ -371,6 +446,21 @@ describe("validation", () => {
     const { code, io } = await run(["vercel", "--name", name, "--suffix", "-t.vercel.app"]);
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("reserved");
+  });
+
+  test.each(["evil.com/x", "evil.com", "-bad", "a_b", "x".repeat(64)])("rejects the workers.dev subdomain %p", async (subdomain) => {
+    const { code, io } = await run(["cloudflare", "--name", "acme", "--domain", "example.com", "--subdomain", subdomain, "--account-id", "abc"]);
+    expect(code).toBe(1);
+    expect(io.err.join("\n")).toContain("--subdomain");
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  test.each(["--zone-id=--force", "--zone-id=-x", "--account-id=--help"])("rejects an ID that starts with a dash: %p", async (flag) => {
+    const argv = flag.startsWith("--zone-id") ? [...CF, "--media", flag] : [...CF.slice(0, -2), flag];
+    const { code, io } = await run(argv, { runner: fakeRunner(MEDIA_OK) });
+    expect(code).toBe(1);
+    expect(io.err.join("\n")).toContain(flag.split("=")[0]);
+    expect(readdirSync(dir)).toEqual([]);
   });
 
   test.each(["https://example.com", "example", "example.com/path", "-bad.com", "1.2"])("rejects the domain %p", async (domain) => {
@@ -486,8 +576,96 @@ describe("changing host", () => {
   });
 });
 
+describe("wrangler.jsonc hand edits", () => {
+  async function edit(change: (wrangler: Record<string, any>) => void, argv = CF) {
+    await run(CF);
+    const wrangler = readJson("wrangler.jsonc");
+    change(wrangler);
+    writeFileSync(join(dir, "wrangler.jsonc"), `${JSON.stringify(wrangler, null, 2)}\n`);
+    expect((await run(argv)).code).toBe(0);
+    return readJson("wrangler.jsonc");
+  }
+
+  test("assets keeps extra settings, while directory and the API route stay managed", async () => {
+    const wrangler = await edit((w) => {
+      w.assets = { directory: "./public", html_handling: "none", run_worker_first: ["/x/*"] };
+    });
+    expect(wrangler.assets).toEqual({ directory: "./dist", html_handling: "none", run_worker_first: ["/x/*", "/api/*"] });
+  });
+
+  test("run_worker_first true is kept as it already covers the API", async () => {
+    const wrangler = await edit((w) => {
+      w.assets.run_worker_first = true;
+    });
+    expect(wrangler.assets.run_worker_first).toBe(true);
+  });
+
+  test("compatibility_flags is a union", async () => {
+    const wrangler = await edit((w) => {
+      w.compatibility_flags = ["global_fetch_strictly_public"];
+    });
+    expect(wrangler.compatibility_flags).toEqual(["global_fetch_strictly_public", "nodejs_compat"]);
+  });
+
+  test("previews is kept", async () => {
+    const wrangler = await edit((w) => {
+      w.previews = { vars: { A: "1" } };
+    });
+    expect(wrangler.previews).toEqual({ vars: { A: "1" } });
+  });
+
+  test("extra routes stay after the managed one, and are not duplicated", async () => {
+    const wrangler = await edit((w) => {
+      w.routes.push("example.com/files/*", { pattern: "other.example.com", custom_domain: true });
+    });
+    expect(wrangler.routes).toEqual([
+      { pattern: "acme.example.com", custom_domain: true },
+      "example.com/files/*",
+      { pattern: "other.example.com", custom_domain: true },
+    ]);
+    const before = snapshot();
+    await run(CF);
+    expect(snapshot()).toEqual(before);
+  });
+
+  test("renaming drops the custom domain the old name wrote, but not hand-added routes", async () => {
+    const wrangler = await edit(
+      (w) => {
+        w.routes.push("example.com/files/*");
+      },
+      CF.map((v) => (v === "acme" ? "acme2" : v))
+    );
+    expect(wrangler.routes).toEqual([{ pattern: "acme2.example.com", custom_domain: true }, "example.com/files/*"]);
+  });
+});
+
 describe("cloudflare --media", () => {
   const MEDIA = [...CF, "--media", "--zone-id", "zone1"];
+
+  /** A fake R2 that remembers buckets and domains, so a retry sees what the first try left behind. */
+  function statefulR2(state = { failCors: false }) {
+    const buckets = new Set<string>();
+    const domains = new Map<string, string>();
+    const handlers: Record<string, Handler> = {
+      "r2 bucket create": (args) => {
+        if (buckets.has(args[3])) return fail("The bucket you tried to create already exists, and you own it. [code: 10004]");
+        buckets.add(args[3]);
+        return ok();
+      },
+      "r2 bucket domain list": (args) => {
+        const mine = [...domains].filter(([, bucket]) => bucket === args[4]).map(([host]) => `domain: ${host}`);
+        return ok(mine.length > 0 ? mine.join("\n\n") : "There are no custom domains connected to this bucket.");
+      },
+      "r2 bucket domain add": (args) => {
+        const host = args[args.indexOf("--domain") + 1];
+        if (domains.has(host)) return fail("The domain is already in use by a bucket.");
+        domains.set(host, args[4]);
+        return ok();
+      },
+      "r2 bucket cors set": () => (state.failCors ? fail("cors exploded") : ok()),
+    };
+    return { handlers, state, domains };
+  }
 
   test("creates the bucket, attaches the domain, sets CORS, then writes mediaUrl", async () => {
     const runner = fakeRunner(MEDIA_OK);
@@ -496,51 +674,65 @@ describe("cloudflare --media", () => {
       if (args[2] === "cors") cors = JSON.parse(readFileSync(args[args.indexOf("--file") + 1], "utf8"));
       return runner.run(args, options);
     };
-    const code = await connect(MEDIA, { cwd: dir, run: wrapped, io: session().io, env: {}, today: TODAY });
+    const code = await connect(MEDIA, { cwd: dir, run: wrapped, io: session().io, env: {}, compatibilityDate: NEWEST_DATE });
     expect(code).toBe(0);
     expect(readJson("project.config.json").mediaUrl).toBe("https://acme-media.example.com");
-    expect(runner.calls.map((c) => c.args.slice(0, 4))).toEqual([
+    expect(runner.calls.map((c) => c.args)).toEqual([
       ["r2", "bucket", "create", "acme-media"],
-      ["r2", "bucket", "domain", "add"],
-      ["r2", "bucket", "cors", "set"],
+      ["r2", "bucket", "domain", "list", "acme-media"],
+      ["r2", "bucket", "domain", "add", "acme-media", "--domain", "acme-media.example.com", "--zone-id", "zone1", "--force"],
+      ["r2", "bucket", "cors", "set", "acme-media", "--file", expect.stringMatching(/cors\.json$/), "--force"],
     ]);
-    expect(runner.calls[1].args).toEqual([
-      "r2", "bucket", "domain", "add", "acme-media", "--domain", "acme-media.example.com", "--zone-id", "zone1", "--force",
-    ]);
-    expect(runner.calls.every((c) => c.env?.CLOUDFLARE_ACCOUNT_ID === "abc")).toBe(true);
-    const rule = (cors as { rules: { allowed: { origins: string[]; methods: string[] } }[] }).rules[0];
-    expect(rule.allowed.origins).toEqual(["*"]);
-    expect(rule.allowed.methods).toEqual(["GET", "HEAD"]);
+    expect(cors).toEqual({
+      rules: [
+        {
+          allowed: { origins: ["*"], methods: ["GET", "HEAD"], headers: ["Range", "Content-Type"] },
+          exposeHeaders: ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+          maxAgeSeconds: 86400,
+        },
+      ],
+    });
   });
 
-  test("removes the temp CORS file", async () => {
-    let file = "";
+  test("runs from an empty directory with the account in the environment, whatever wrangler.jsonc says", async () => {
+    // wrangler.jsonc names account A. The run is told B. Wrangler would act on A if it ran here.
+    await run(CF.map((v) => (v === "abc" ? "A" : v)));
+    const seen: { cwd?: string; files: string[]; env?: Record<string, string> }[] = [];
     const runner = fakeRunner(MEDIA_OK);
-    await connect(MEDIA, {
+    const code = await connect(MEDIA.map((v) => (v === "abc" ? "B" : v)), {
       cwd: dir,
       run: async (args, options) => {
-        if (args[2] === "cors") file = args[args.indexOf("--file") + 1];
+        seen.push({ cwd: options?.cwd, files: options?.cwd ? readdirSync(options.cwd) : [], env: options?.env });
         return runner.run(args, options);
       },
       io: session().io,
       env: {},
-      today: TODAY,
+      compatibilityDate: NEWEST_DATE,
     });
-    expect(file).not.toBe("");
-    expect(existsSync(file)).toBe(false);
+    expect(code).toBe(0);
+    expect(readJson("wrangler.jsonc").account_id).toBe("B");
+    expect(seen).toHaveLength(4);
+    for (const call of seen) {
+      expect(call.cwd).toBeDefined();
+      expect(call.cwd).not.toBe(dir);
+      expect(call.files.filter((f) => f.startsWith("wrangler"))).toEqual([]);
+      expect(call.env).toEqual({ CLOUDFLARE_ACCOUNT_ID: "B" });
+    }
+    expect(existsSync(seen[0].cwd as string)).toBe(false);
   });
 
   test("takes the zone ID from WF_ZONE_ID", async () => {
     const runner = fakeRunner(MEDIA_OK);
     const { code } = await run([...CF, "--media"], { runner, env: { WF_ZONE_ID: "envzone" } });
     expect(code).toBe(0);
-    expect(runner.calls[1].args).toContain("envzone");
+    expect(runner.calls[2].args).toContain("envzone");
   });
 
   test.each([
     ["r2 bucket create", "Creating the R2 bucket", 1],
-    ["r2 bucket domain add", "Attaching the custom domain", 2],
-    ["r2 bucket cors set", "Setting CORS", 3],
+    ["r2 bucket domain list", "Listing the R2 bucket's custom domains", 2],
+    ["r2 bucket domain add", "Attaching the custom domain", 3],
+    ["r2 bucket cors set", "Setting CORS", 4],
   ])("a failure at %s names the step and leaves everything unchanged", async (key, step, callCount) => {
     // Start from a connected project so there is a mediaUrl to protect.
     await run(CF);
@@ -551,6 +743,7 @@ describe("cloudflare --media", () => {
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain(step as string);
     expect(io.err.join("\n")).toContain("nope from cloudflare");
+    expect(io.err.join("\n")).toContain("may already have changed your Cloudflare account");
     expect(runner.calls).toHaveLength(callCount as number);
     expect(snapshot()).toEqual(before);
     expect(readJson("project.config.json").mediaUrl).toBeNull();
@@ -562,29 +755,52 @@ describe("cloudflare --media", () => {
     expect(readdirSync(dir)).toEqual([]);
   });
 
-  test("a bucket that already exists counts as success, and a re-run changes no bytes", async () => {
-    await run(MEDIA, { runner: fakeRunner(MEDIA_OK) });
+  test("a retry after a CORS failure succeeds, because the attached domain is found and skipped", async () => {
+    const r2 = statefulR2({ failCors: true });
+    const runner = fakeRunner(r2.handlers);
+
+    const first = await run(MEDIA, { runner });
+    expect(first.code).toBe(1);
+    expect(first.io.err.join("\n")).toContain("Setting CORS");
+    expect(readdirSync(dir)).toEqual([]);
+    expect(r2.domains.get("acme-media.example.com")).toBe("acme-media");
+
+    r2.state.failCors = false;
+    const second = await run(MEDIA, { runner });
+    expect(second.code).toBe(0);
+    expect(second.io.out.join("\n")).toContain("already attached");
+    expect(readJson("project.config.json").mediaUrl).toBe("https://acme-media.example.com");
+    expect(runner.calls.filter((c) => c.args[3] === "add")).toHaveLength(1);
+  });
+
+  test("a bucket that already exists counts as success (UNCONFIRMED wording), and a re-run changes no bytes", async () => {
+    const r2 = statefulR2();
+    const runner = fakeRunner(r2.handlers);
+    await run(MEDIA, { runner });
     const before = snapshot();
 
-    const runner = fakeRunner({
-      ...MEDIA_OK,
-      "r2 bucket create": () => fail("The bucket you tried to create already exists, and you own it. [code: 10004]"),
-      "r2 bucket domain add": () => fail("This domain is already connected to the bucket"),
-    });
     const { code } = await run(MEDIA, { runner });
     expect(code).toBe(0);
-    expect(runner.calls).toHaveLength(3);
     expect(snapshot()).toEqual(before);
   });
 
-  test("an already-attached domain is only forgiven when an earlier run recorded it", async () => {
-    const runner = fakeRunner({
-      ...MEDIA_OK,
-      "r2 bucket domain add": () => fail("already in use by another bucket"),
-    });
-    const { code, io } = await run(MEDIA, { runner });
+  test("a domain held by another bucket still fails", async () => {
+    const r2 = statefulR2();
+    r2.domains.set("acme-media.example.com", "someone-elses-bucket");
+    const { code, io } = await run(MEDIA, { runner: fakeRunner(r2.handlers) });
     expect(code).toBe(1);
     expect(io.err.join("\n")).toContain("Attaching the custom domain");
+    expect(io.err.join("\n")).toContain("already in use");
+  });
+
+  test("a longer hostname in the list does not count as this one", async () => {
+    const runner = fakeRunner({
+      ...MEDIA_OK,
+      "r2 bucket domain list": () => ok("domain: xacme-media.example.com\n\ndomain: acme-media.example.com.evil.io"),
+    });
+    const { code } = await run(MEDIA, { runner });
+    expect(code).toBe(0);
+    expect(runner.calls.some((c) => c.args[3] === "add")).toBe(true);
   });
 
   test("a different failure from create is not mistaken for an existing bucket", async () => {
@@ -594,11 +810,5 @@ describe("cloudflare --media", () => {
 
   test("--media is rejected on vercel", async () => {
     expect((await run([...VC, "--media"])).code).toBe(1);
-  });
-});
-
-describe("jsonc", () => {
-  test("keeps comment-like text inside strings", () => {
-    expect(parseJsonc('{"a": "http://x//y /* z */", /* c */ "b": [1,2,],}')).toEqual({ a: "http://x//y /* z */", b: [1, 2] });
   });
 });

@@ -1,15 +1,17 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { hasComments, parseJsonc } from "./connect/jsonc";
 import { type Runner, StepError, setupMedia } from "./connect/media";
 import {
+  NAME,
   PROJECT_CONFIG_FILE,
   type ProjectConfig,
   type ProjectHost,
+  SUFFIX,
   readProjectConfig,
   validateProjectConfig,
 } from "./project-config";
@@ -18,10 +20,12 @@ export type { RunResult, Runner } from "./connect/media";
 
 const WRANGLER_FILE = "wrangler.jsonc";
 const RESERVED_NAMES = ["www", "api", "cdn", "mail", "admin", "ftp", "app"];
-const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
-const SUFFIX = /^[-.][a-z0-9.-]+$/;
-const ID = /^[\w-]+$/;
+// A Vercel preview suffix is exactly one team label plus .vercel.app. Anything looser, such as
+// `.vercel.app` or `-app`, would widen the loader's allowlist beyond one team.
+const VERCEL_SUFFIX = /^[-.][a-z0-9]([a-z0-9-]*[a-z0-9])?\.vercel\.app$/;
+// No leading "-", so an ID can never be read as a flag by wrangler.
+const ID = /^\w[\w-]*$/;
 // R2 bucket names, and so `<name>-media`, are at most 63 characters.
 const MAX_NAME_WITH_MEDIA = 63 - "-media".length;
 
@@ -57,7 +61,8 @@ export interface ConnectDeps {
   run: Runner;
   io: Io;
   env: Record<string, string | undefined>;
-  today: () => Date;
+  /** Newest compatibility date to write. Injected so tests don't depend on the installed workerd. */
+  compatibilityDate: () => string;
 }
 
 function createIo(): Io {
@@ -87,7 +92,7 @@ export function createRunner(cwd: string): Runner {
   return (args, options) =>
     new Promise((done) => {
       const child = spawn(wranglerBin(cwd), args, {
-        cwd,
+        cwd: options?.cwd ?? cwd,
         env: { ...process.env, ...options?.env },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -176,6 +181,11 @@ export function validateSuffix(input: string): string {
       `"${input}" is not a valid preview suffix. Use lowercase letters, digits, dots and hyphens, like -your-team.vercel.app.`
     );
   }
+  if (!VERCEL_SUFFIX.test(suffix)) {
+    throw new UserError(
+      `"${input}" is not a Vercel team preview suffix. It must be a dash or dot, your team name, then .vercel.app, like -your-team.vercel.app. Anything looser would let other Vercel projects through.`
+    );
+  }
   return suffix;
 }
 
@@ -256,7 +266,14 @@ async function resolveAccount(
   given: string | undefined,
   existing: string | undefined
 ): Promise<string> {
-  if (given) return validateId("account ID")(given);
+  if (given) {
+    try {
+      return validateId("account ID")(given);
+    } catch (error) {
+      if (error instanceof UserError) throw new UserError(`--account-id: ${error.message}`);
+      throw error;
+    }
+  }
 
   const result = await run(["whoami", "--json"]);
   const whoami = parseWhoami(result.stdout);
@@ -275,10 +292,15 @@ async function resolveAccount(
   if (accounts.length === 0) {
     throw new UserError("Wrangler is logged in but listed no accounts. Pass --account-id.");
   }
+  if (existing && !accounts.some((a) => a.id === existing)) {
+    throw new UserError(
+      `${WRANGLER_FILE} has account_id ${existing}, but this login does not list it. Logging in as someone else would silently change the account. Pass --account-id to confirm which account to use.`
+    );
+  }
   if (accounts.length === 1) return accounts[0].id;
 
   const listing = accounts.map((a, i) => `  ${i + 1}. ${a.name ?? "(unnamed)"}  ${a.id}`).join("\n");
-  const fallback = accounts.some((a) => a.id === existing) ? existing : undefined;
+  const fallback = existing;
   if (!io.interactive) {
     if (fallback) return fallback;
     throw new UserError(
@@ -299,7 +321,7 @@ function readJsonc(path: string): Record<string, unknown> | null {
   const text = readFileSync(path, "utf8");
   let parsed: unknown;
   try {
-    parsed = parseJsonc(text);
+    parsed = Bun.JSONC.parse(text);
   } catch (error) {
     throw new UserError(`${basename(path)} is not valid JSON: ${error}. Fix it or delete it, then run this again.`);
   }
@@ -309,9 +331,49 @@ function readJsonc(path: string): Record<string, unknown> | null {
   return parsed as Record<string, unknown>;
 }
 
-function formatDate(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/** The existing list in its order, then any wanted entries it lacks. */
+function union<T>(current: unknown, wanted: T[]): unknown[] {
+  const list = Array.isArray(current) ? current : [];
+  return [...list, ...wanted.filter((item) => !list.includes(item))];
+}
+
+const routePattern = (route: unknown): unknown => (typeof route === "string" ? route : asRecord(route).pattern);
+
+/** Routes added by hand, minus the managed one and the one an earlier run wrote for the old name. */
+function keptRoutes(current: unknown, drop: (string | undefined)[]): unknown[] {
+  return (Array.isArray(current) ? current : []).filter((route) => !drop.includes(routePattern(route) as string));
+}
+
+/** The custom domain an earlier `connect` run wrote, so renaming a project doesn't strand it. */
+function oldRoute(existing: ProjectConfig | null, wasCloudflare: boolean): string | undefined {
+  return wasCloudflare && existing ? existing.deployUrl.replace("https://", "") : undefined;
+}
+
+/** The newest date the bundled workerd in Wrangler 4.155 understands. Used when it can't be read. */
+export const FALLBACK_COMPATIBILITY_DATE = "2026-10-23";
+
+/** workerd versions are `1.YYYYMMDD.patch`, and the date is its newest supported compatibility date. */
+export function compatibilityDateFromVersion(version: string): string | undefined {
+  const match = version.match(/^\d+\.(\d{4})(\d{2})(\d{2})\./);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
+}
+
+/**
+ * Today's date would be refused by `wrangler dev` whenever it is newer than the workerd Wrangler
+ * ships, so the default is that workerd's own date.
+ */
+export function workerdCompatibilityDate(): string {
+  try {
+    // workerd isn't hoisted by pnpm, so resolve it from where wrangler lives.
+    const fromWrangler = createRequire(createRequire(import.meta.url).resolve("wrangler/package.json"));
+    return compatibilityDateFromVersion(fromWrangler("workerd/package.json").version) ?? FALLBACK_COMPATIBILITY_DATE;
+  } catch {
+    return FALLBACK_COMPATIBILITY_DATE;
+  }
 }
 
 function json(value: unknown): string {
@@ -381,6 +443,7 @@ async function planCloudflare(
   const { io, env, cwd } = deps;
   const wranglerPath = resolve(cwd, WRANGLER_FILE);
   const currentWrangler = readJsonc(wranglerPath);
+  const currentText = currentWrangler ? readFileSync(wranglerPath, "utf8") : undefined;
   const wasCloudflare = existing?.host === "cloudflare";
 
   const domainPrefix = wasCloudflare ? `https://${existing.name}.` : undefined;
@@ -438,7 +501,6 @@ async function planCloudflare(
       bucket,
       mediaHost,
       zoneId,
-      alreadyConnected: existing?.mediaUrl === url,
       log: io.log,
     });
     mediaUrl = url;
@@ -452,31 +514,48 @@ async function planCloudflare(
     previewHostSuffix: `-${name}.${subdomain}.workers.dev`,
   };
 
-  const compatibilityDate =
-    typeof currentWrangler?.compatibility_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(currentWrangler.compatibility_date)
-      ? currentWrangler.compatibility_date
-      : formatDate(deps.today());
+  const newest = deps.compatibilityDate();
+  let compatibilityDate = newest;
+  const currentDate = currentWrangler?.compatibility_date;
+  if (typeof currentDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(currentDate)) {
+    if (currentDate <= newest) {
+      compatibilityDate = currentDate;
+    } else {
+      io.log(`Note: compatibility_date ${currentDate} is newer than the local workerd supports, so it was lowered to ${newest}.`);
+    }
+  }
+  const route = `${name}.${domain}`;
+  const currentAssets = asRecord(currentWrangler?.assets);
   const managed = {
     name,
     account_id: accountId,
     compatibility_date: compatibilityDate,
-    compatibility_flags: ["nodejs_compat"],
+    compatibility_flags: union(currentWrangler?.compatibility_flags, ["nodejs_compat"]),
     main: ".generated/worker.ts",
-    assets: { directory: "./dist", run_worker_first: ["/api/*"] },
-    routes: [{ pattern: `${name}.${domain}`, custom_domain: true }],
+    // Hand-added asset settings such as html_handling survive. directory is ours.
+    assets: {
+      ...currentAssets,
+      directory: "./dist",
+      run_worker_first: currentAssets.run_worker_first === true ? true : union(currentAssets.run_worker_first, ["/api/*"]),
+    },
+    routes: [
+      { pattern: route, custom_domain: true },
+      ...keptRoutes(currentWrangler?.routes, [route, oldRoute(existing, wasCloudflare)]),
+    ],
     preview_urls: true,
-    previews: {},
+    previews: currentWrangler?.previews ?? {},
   };
-  // Keep anything the user added by hand, such as vars or bindings.
+  // Keep anything else the user added by hand, such as vars or bindings.
   const extras = Object.entries(currentWrangler ?? {}).filter(([key]) => !(key in managed));
   const wrangler = { ...managed, ...Object.fromEntries(extras) };
+  const wranglerText = json(wrangler);
 
-  if (currentWrangler && hasComments(readFileSync(wranglerPath, "utf8"))) {
-    io.log(`Note: ${WRANGLER_FILE} is rewritten as plain JSON, so its comments are not kept.`);
+  if (currentText !== undefined && currentText !== wranglerText) {
+    io.log(`Note: ${WRANGLER_FILE} is rewritten as plain JSON with a fixed key order, so any comments and formatting in it are not kept.`);
   }
 
   return {
-    files: { [PROJECT_CONFIG_FILE]: json(config), [WRANGLER_FILE]: json(wrangler) },
+    files: { [PROJECT_CONFIG_FILE]: json(config), [WRANGLER_FILE]: wranglerText },
     summary: [
       `${PROJECT_CONFIG_FILE}  deployUrl ${config.deployUrl}`,
       `${WRANGLER_FILE}  account_id ${accountId}`,
@@ -537,14 +616,16 @@ export async function connect(argv: string[], overrides: Partial<ConnectDeps> = 
     io,
     run: overrides.run ?? createRunner(cwd),
     env: overrides.env ?? process.env,
-    today: overrides.today ?? (() => new Date()),
+    compatibilityDate: overrides.compatibilityDate ?? workerdCompatibilityDate,
   };
 
   try {
     return await execute(argv, deps);
   } catch (error) {
     if (error instanceof StepError) {
-      io.error(`${error.message}\nNothing was written. Fix the problem and run the same command again.`);
+      io.error(
+        `${error.message}\nNo project files were written. Steps before this one may already have changed your Cloudflare account (bucket, domain); running the same command again picks up where it stopped.`
+      );
     } else if (error instanceof UserError) {
       io.error(error.message);
     } else if (error instanceof Error && (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {

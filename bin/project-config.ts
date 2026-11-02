@@ -15,8 +15,8 @@ export interface ProjectConfig {
 }
 
 const HOSTS: readonly ProjectHost[] = ["cloudflare", "vercel"];
-const SUFFIX = /^[-.][a-z0-9.-]+$/;
-const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+export const SUFFIX = /^[-.][a-z0-9.-]+$/;
+export const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
 function isHttpsOrigin(value: unknown): boolean {
   if (typeof value !== "string") return false;
