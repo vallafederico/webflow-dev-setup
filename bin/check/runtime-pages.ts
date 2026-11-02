@@ -71,35 +71,40 @@ const HEAD = `<meta charset="utf-8"><title>fixture</title><link rel="icon" href=
 const page = (head: string, body: string) =>
   `<!doctype html><html lang="en"><head>${HEAD}${head}</head><body>${body}</body></html>`;
 
+const EDITOR_NODE = '<div class="w-editor-publish-node"></div>';
+
+/**
+ * The fixture root, wrapped the way Taxi needs when the project has turned it
+ * on: its constructor reads `[data-taxi]` and throws on a page without one.
+ */
+const root = (markup: string, taxi: boolean) =>
+  taxi
+    ? `<div data-taxi><div data-taxi-view><main id="fixture-root">${markup}</main></div></div>`
+    : `<main id="fixture-root">${markup}</main>`;
+
 /** The production bundle at the end of <body>, as Webflow's footer code loads it. */
-export function normalPage(script: string, markup: string): string {
-  return page(
-    "",
-    `<main id="fixture-root">${markup}</main><script src="${script}"></script>`
-  );
+export function normalPage(script: string, markup: string, taxi = false) {
+  return page("", `${root(markup, taxi)}<script src="${script}"></script>`);
 }
 
 /** The bundle from a synchronous <script> in <head>, which runs before <body> exists. */
-export function earlyPage(script: string, markup: string): string {
-  return page(
-    `<script src="${script}"></script>`,
-    `<main id="fixture-root">${markup}</main>`
-  );
+export function earlyPage(script: string, markup: string, taxi = false) {
+  return page(`<script src="${script}"></script>`, root(markup, taxi));
 }
 
 /** Webflow's editor marks the page with this node as the first child of <body>. */
-export function editorPage(script: string, markup: string): string {
+export function editorPage(script: string, markup: string, taxi = false) {
   return page(
     "",
-    `<div class="w-editor-publish-node"></div><main id="fixture-root">${markup}</main><script src="${script}"></script>`
+    `${EDITOR_NODE}${root(markup, taxi)}<script src="${script}"></script>`
   );
 }
 
 /** An empty fixture root, so nothing mounts until the test drives the lifecycle. */
-export function leakPage(testScript: string, editor = false): string {
+export function leakPage(testScript: string, editor = false, taxi = false) {
   return page(
     "",
-    `${editor ? '<div class="w-editor-publish-node"></div>' : ""}<main id="fixture-root"></main><script src="${testScript}"></script>`
+    `${editor ? EDITOR_NODE : ""}${root("", taxi)}<script src="${testScript}"></script>`
   );
 }
 
@@ -110,10 +115,8 @@ export function taxiPage(
   markup: string
 ): string {
   const other = which === "a" ? "b" : "a";
-  return page(
-    "",
-    `<div data-taxi><div data-taxi-view><main id="fixture-root"><h1 id="taxi-title">Taxi page ${which}</h1><a id="taxi-link" href="/__taxi/${other}.html">Go to ${other}</a>${markup}</main></div></div><script src="${script}"></script>`
-  );
+  const content = `<h1 id="taxi-title">Taxi page ${which}</h1><a id="taxi-link" href="/__taxi/${other}.html">Go to ${other}</a>${markup}`;
+  return page("", `${root(content, true)}<script src="${script}"></script>`);
 }
 
 /** Source file behind a built entry, to point findings at. */

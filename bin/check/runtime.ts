@@ -232,13 +232,16 @@ async function leakRun(
       const started = await page.evaluate(() =>
         (window as unknown as Fixture).__wdsCheck.cycles()
       );
-      if (started.called === 0) {
-        problems.push({
-          rule,
-          file: "src/modules",
-          message: `${step}: createCycles started no module, so nothing was tested`,
-          fix: "Check that src/modules/_/create.ts finds the modules and the fixture markup has data-module elements",
-        });
+      if (started.called === 0 || started.uninitialized.length > 0) {
+        // A module that threw was already reported with its own message.
+        if (!problems.some(isFailure)) {
+          problems.push({
+            rule,
+            file: "src/modules",
+            message: `${step}: createCycles did not start ${started.uninitialized.join(", ") || "any module"}, so nothing was tested`,
+            fix: "Check that src/modules/_/create.ts finds the modules and that each fixture has its data-module element",
+          });
+        }
         break;
       }
       if (!(await hook("runPageIn"))) break;
@@ -504,15 +507,15 @@ export const runtime: Check = {
         const entry = id ? entries[Number(id)] : undefined;
         switch (kind) {
           case "normal":
-            return entry ? normalPage(`/${entry}`, markup) : null;
+            return entry ? normalPage(`/${entry}`, markup, config.taxi) : null;
           case "early":
-            return entry ? earlyPage(`/${entry}`, markup) : null;
+            return entry ? earlyPage(`/${entry}`, markup, config.taxi) : null;
           case "editor":
-            return editorPage("/app.js", markup);
+            return editorPage("/app.js", markup, config.taxi);
           case "leak":
-            return leakPage("/__test/fixture-entry.js");
+            return leakPage("/__test/fixture-entry.js", false, config.taxi);
           case "leak-editor":
-            return leakPage("/__test/fixture-entry.js", true);
+            return leakPage("/__test/fixture-entry.js", true, config.taxi);
           default:
             return null;
         }

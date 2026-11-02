@@ -6,6 +6,7 @@ import {
   allMarkup,
   earlyPage,
   editorPage,
+  leakPage,
   entrySource,
   fixtureProblems,
   listModules,
@@ -100,6 +101,21 @@ describe("pages", () => {
   test("the editor marker is the first child of body", () => {
     const html = editorPage("/app.js", "");
     expect(html).toMatch(/<body><div class="w-editor-publish-node"><\/div>/);
+  });
+
+  test("with Taxi on, every fixture page is wrapped, because Taxi's constructor needs [data-taxi]", () => {
+    for (const html of [
+      normalPage("/app.js", "", true),
+      earlyPage("/app.js", "", true),
+      editorPage("/app.js", "", true),
+      leakPage("/t.js", false, true),
+    ]) {
+      expect(html).toContain("<div data-taxi><div data-taxi-view>");
+    }
+    expect(normalPage("/app.js", "")).not.toContain("data-taxi");
+    expect(editorPage("/app.js", "", true)).toMatch(
+      /<body><div class="w-editor-publish-node"><\/div>/
+    );
   });
 
   test("taxi pages are wrapped the way Taxi expects and link to each other", () => {
