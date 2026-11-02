@@ -62,6 +62,7 @@ const scrollData = {
 ## Webflow Editor Integration
 
 ```typescript
+// This is what src/lib/scroll.ts already does. In a module, use onEditor.
 import { handleEditor } from "@webflow/detect-editor";
 
 // Automatic scroll system management
@@ -84,7 +85,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let scrollUnsubscribe: (() => void) | null = null;
 
   // Editor detection
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {

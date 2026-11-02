@@ -23,11 +23,12 @@ import { Raf } from "@lib/subs";
 
 // Subscribe to animation frame updates
 const unsubscribe = Raf.add(({ deltaTime, time }) => {
-  // deltaTime: time since last frame in seconds
-  // time: total time since start (scaled down by 0.01)
+  // deltaTime: seconds since the ticker started
+  // time: the last frame's length in milliseconds, times 0.01
+  // (the names are swapped, see "Raf Data" below)
 
   // Update animations
-  element.style.transform = `translateX(${Math.sin(time) * 50}px)`;
+  element.style.transform = `translateX(${Math.sin(deltaTime) * 50}px)`;
 });
 
 // Clean up subscription
@@ -229,10 +230,12 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 interface RafData {
-  deltaTime: number; // Time since last frame in seconds
-  time: number; // Total time since start (scaled by 0.01)
+  deltaTime: number; // Seconds elapsed since the GSAP ticker started
+  time: number; // Last frame's length in milliseconds, times 0.01
 }
 ```
+
+The names are swapped relative to what they sound like. GSAP's ticker calls its listeners with `(secondsElapsed, millisecondsSinceLastFrame)`, and `_Raf.update(deltaTime, time)` in `src/lib/subs.ts` names them in that order. Check that file before relying on either value, in case it has been changed.
 
 ### Resize Data
 

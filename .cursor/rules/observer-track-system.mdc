@@ -41,9 +41,10 @@ onDestroy(() => {
 ```typescript
 import { onView, onTrack } from "@/modules/_";
 
-// Auto-cleanup observer
+// Auto-cleanup observer. It only starts with autoStart: true, or observer.start()
 const observer = onView(element, {
   threshold: 0.1,
+  autoStart: true,
   callback: ({ isIn }) => {
     element.classList.toggle("in-view", isIn);
   },

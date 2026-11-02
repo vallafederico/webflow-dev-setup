@@ -1,5 +1,5 @@
 ---
-description: Webflow Designer detection (handleEditor) and editor vs published behavior. Use when disabling features in Designer or handling editor mode.
+description: Webflow Designer detection (onEditor) and editor vs published behavior. Use when disabling features in Designer or handling editor mode.
 globs:
 alwaysApply: false
 ---
@@ -7,11 +7,13 @@ alwaysApply: false
 
 ## Editor Detection
 
+Use `onEditor` in modules. It calls your function now and when the editor state changes, and releases its listener in `onDestroy`. A module that calls `Raf.add`, `onView` or GSAP must call it (house rule `editor/handled`). `handleEditor` from `@webflow/detect-editor` is what it wraps, for library code such as `src/lib/scroll.ts`.
+
 ```typescript
-import { handleEditor } from "@webflow/detect-editor";
+import { onEditor } from "@/modules/_";
 
 // Basic editor detection
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   if (isEditor) {
     console.log("Webflow editor is active");
     // Disable custom features
@@ -29,7 +31,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let isEditorMode = false;
 
   // Detect editor mode
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -62,6 +64,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 ## Scroll System Integration
 
 ```typescript
+// This is what src/lib/scroll.ts already does. In a module, use onEditor.
 import { handleEditor } from "@webflow/detect-editor";
 import { Scroll } from "@lib/scroll";
 
@@ -86,7 +89,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let observer: any = null;
 
   // Editor detection with full feature management
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -130,7 +133,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let isEditorMode = false;
   let animations: any[] = [];
 
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -182,7 +185,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let observers: any[] = [];
 
   // Webflow editor detection
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -282,7 +285,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let isEditorMode = false;
   let isActive = false;
 
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -313,7 +316,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ```typescript
 // Enable debug logging
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   console.log("Editor mode changed:", isEditor);
 
   if (isEditor) {

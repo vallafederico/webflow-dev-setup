@@ -21,7 +21,7 @@ alwaysApply: false
 
 ```typescript
 // 1. External libraries
-import gsap from "gsap";
+import gsap from "@lib/gsap";
 
 // 2. Internal modules (lifecycle hooks)
 import { onMount, onDestroy, onPageIn, onPageOut, onView, onTrack } from "@/modules/_";

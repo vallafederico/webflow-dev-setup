@@ -355,6 +355,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   // Auto-cleanup observers
   const observer = onView(element, {
     threshold: 0.1,
+    autoStart: true,
     callback: ({ isIn }) => {
       element.classList.toggle("in-view", isIn);
     },
@@ -496,5 +497,5 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ### Convenience Functions
 
-- `onView(element, config)` - Create auto-cleanup observer
+- `onView(element, config)` - Create auto-cleanup observer. Like `Observe`, it only starts with `autoStart: true` or a call to `observer.start()`
 - `onTrack(element, config)` - Create auto-cleanup track

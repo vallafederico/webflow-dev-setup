@@ -165,21 +165,19 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ## Frame-Rate Independent Animations
 
+`Raf` callbacks get `{ deltaTime, time }`, but the names are swapped relative to what they sound like. GSAP's ticker calls `_Raf.update(deltaTime, time)` in `src/lib/subs.ts` with `(secondsElapsed, millisecondsSinceLastFrame)`. Today `deltaTime` is the seconds elapsed since the ticker started, and `time` is the last frame's length in milliseconds times 0.01 (about 0.17 at 60fps). Check `src/lib/subs.ts` before relying on either, in case it has been changed.
+
 ```typescript
-// Good - Frame-rate independent
+// Derive a value from elapsed time: the same speed on every device
 Raf.add(({ deltaTime }) => {
-  // Use deltaTime for consistent animation speed
-  const currentOpacity = parseFloat(element.style.opacity) || 0;
-  element.style.opacity = Math.min(
-    1,
-    currentOpacity + deltaTime * 2
-  ).toString();
+  element.style.opacity = (Math.sin(deltaTime) * 0.5 + 0.5).toString();
 });
 
-// Bad - Frame-rate dependent
+// Advance by the frame step: also frame-rate independent
+let x = 0;
 Raf.add(({ time }) => {
-  // This will run at different speeds on different devices
-  element.style.opacity = Math.sin(time) * 0.5 + 0.5;
+  x += time * 10;
+  element.style.transform = `translateX(${x}px)`;
 });
 ```
 

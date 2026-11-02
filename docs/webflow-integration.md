@@ -15,13 +15,13 @@ The Webflow integration system provides:
 
 ### Editor Detection
 
-The `handleEditor` function automatically detects Webflow editor state changes:
+In a module, `onEditor` (from `@/modules/_`) detects Webflow editor state changes and releases its listener on destroy. It wraps `handleEditor` from `@webflow/detect-editor`, which is for library code only:
 
 ```typescript
-import { handleEditor } from "@webflow/detect-editor";
+import { onEditor } from "@/modules/_";
 
 // Basic usage
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   if (isEditor) {
     console.log("Webflow editor is active");
     // Disable custom features
@@ -53,11 +53,11 @@ const checkEditorState = () => {
 The scroll system automatically integrates with Webflow editor detection:
 
 ```typescript
-import { handleEditor } from "@webflow/detect-editor";
+import { onEditor } from "@/modules/_";
 import { Scroll } from "@lib/scroll";
 
 // Automatically handle scroll system
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   if (isEditor) {
     // Disable smooth scrolling in editor
     Scroll.destroy();
@@ -107,13 +107,13 @@ When published site is detected:
 ### Basic Integration
 
 ```typescript
-import { handleEditor } from "@webflow/detect-editor";
+import { onEditor } from "@/modules/_";
 
 export default function (element: HTMLElement, dataset: DOMStringMap) {
   let isEditorMode = false;
 
   // Detect editor mode
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -152,7 +152,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let observer: any = null;
 
   // Editor detection with full feature management
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -196,7 +196,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let isEditorMode = false;
   let animations: any[] = [];
 
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
@@ -277,7 +277,8 @@ interface EditorDetectionConfig {
 ### Scroll System Integration
 
 ```typescript
-// Automatic integration (recommended)
+// Automatic integration (recommended). src/lib/scroll.ts already does this,
+// and it uses handleEditor because it is library code, not a module.
 handleEditor((isEditor) => {
   if (isEditor) {
     Scroll.destroy();
@@ -286,10 +287,10 @@ handleEditor((isEditor) => {
   }
 });
 
-// Manual integration
+// Manual integration, inside a module
 let isEditorMode = false;
 
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   isEditorMode = isEditor;
 });
 
@@ -312,7 +313,7 @@ if (!isEditorMode) {
 
 ```typescript
 // Enable debug logging
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   console.log("Editor mode changed:", isEditor);
 
   if (isEditor) {
@@ -349,16 +350,18 @@ const testFeatureIntegration = () => {
 
 ## API Reference
 
-### handleEditor Function
+### onEditor Function (`@/modules/_`)
 
-- `handleEditor(callback?)` - Set up editor detection
-- `handleEditor(null)` - Remove editor detection
+- `onEditor(callback)` - Calls `callback(isEditor)` now and whenever the editor state changes. Releases the listener in `onDestroy`
+- Use it in modules. A module that calls `Raf.add`, `onView` or GSAP must call it (house rule `editor/handled`, see [House Rules](./house-rules.md))
+
+### handleEditor Function (`@webflow/detect-editor`)
+
+What `onEditor` wraps. Use it in library code such as `src/lib/scroll.ts`, not in modules.
+
+- `handleEditor(callback?)` - Set up editor detection and add `callback` as a listener
+- `releaseEditor(callback)` - Remove a listener added with `handleEditor`
 - Returns: `boolean` - Current editor state
-
-### Editor Detection
-
-- `checkEditorState()` - Check current editor state
-- Returns: `boolean` - Whether editor is active
 
 ### Integration Points
 
@@ -378,7 +381,7 @@ const isEditor = document.body.firstElementChild?.classList.contains(
 );
 
 // New automatic detection
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   // Handle editor state changes
 });
 ```
@@ -392,7 +395,7 @@ if (!isEditor) {
 }
 
 // New reactive approach
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   if (isEditor) {
     // Disable features
   } else {

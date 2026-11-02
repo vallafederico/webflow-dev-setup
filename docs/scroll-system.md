@@ -105,7 +105,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 
 ## Webflow Editor Integration
 
-The scroll system automatically detects and handles Webflow editor mode:
+The scroll system automatically detects and handles Webflow editor mode. This is in `src/lib/scroll.ts`, which uses `handleEditor` because it is library code. Modules use `onEditor` from `@/modules/_` instead:
 
 ```typescript
 import { handleEditor } from "@webflow/detect-editor";
@@ -128,7 +128,7 @@ The system detects Webflow editor by checking for the `.w-editor-publish-node` c
 
 ```typescript
 const checkEditorState = () => {
-  const firstChild = document.body.firstElementChild;
+  const firstChild = document.body?.firstElementChild;
   return (
     firstChild instanceof HTMLElement &&
     firstChild.classList.contains("w-editor-publish-node")
@@ -242,7 +242,7 @@ const track = onTrack(element, {
 
 ### Webflow Integration
 
-1. **Editor Detection**: Always use `handleEditor` for Webflow projects
+1. **Editor Detection**: In modules, use `onEditor` for Webflow projects
 2. **Fallback Handling**: Ensure graceful degradation when scroll is disabled
 3. **Testing**: Test both editor and published modes
 

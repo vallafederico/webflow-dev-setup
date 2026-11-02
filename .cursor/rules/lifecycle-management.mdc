@@ -1,5 +1,5 @@
 ---
-description: Module lifecycle (onMount, onDestroy, onPageIn, onPageOut). Use when initializing, cleaning up, or animating page transitions.
+description: Module lifecycle (onMount, onDestroy, onPageIn, onPageOut, onEditor). Use when initializing, cleaning up, or animating page transitions.
 globs:
 alwaysApply: false
 ---
@@ -19,6 +19,8 @@ onMount(() => {
 ```
 
 ## Destruction Phase
+
+`onDestroy` (and `onPageOut`) only run when Taxi page transitions are enabled, which they are not by default. Write the cleanup anyway: `pnpm check` requires it.
 
 ```typescript
 onDestroy(() => {
@@ -132,12 +134,14 @@ onDestroy(() => {
 
 ## Webflow Editor Integration
 
+`onEditor(fn)` calls `fn(isEditor)` now and whenever the editor state changes, and releases its listener in `onDestroy`. A module that calls `Raf.add`, `onView` or GSAP must call it (house rule `editor/handled`). Don't call `handleEditor` in a module: it has no release.
+
 ```typescript
-import { handleEditor } from "@webflow/detect-editor";
+import { onEditor } from "@/modules/_";
 
 let isEditorMode = false;
 
-handleEditor((isEditor) => {
+onEditor((isEditor) => {
   isEditorMode = isEditor;
 
   if (isEditor) {
@@ -250,7 +254,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   let observers: any[] = [];
 
   // Webflow editor detection
-  handleEditor((isEditor) => {
+  onEditor((isEditor) => {
     isEditorMode = isEditor;
 
     if (isEditor) {
