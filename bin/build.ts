@@ -3,12 +3,31 @@ import type { BuildConfig } from "bun";
 import { generateBuildManifest, saveManifestFiles } from "./manifest";
 import { copyPublicToDist } from "./copy-public";
 import { getBunDefine } from "./public-asset-origin";
-import { cp } from "node:fs/promises";
+import { readProjectConfig } from "./project-config";
+import { generateWorker } from "./generate-worker";
+import { existsSync } from "node:fs";
+import { cp, writeFile } from "node:fs/promises";
+
+// Same rules as vercel.json, which Cloudflare ignores. Not kept in public/,
+// because Vercel would serve a _headers file there to anyone.
+export const HEADERS_FILE = `/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, OPTIONS
+  Access-Control-Allow-Headers: Content-Type
+
+/*.glb
+  Content-Type: model/gltf-binary
+
+/*.gltf
+  Content-Type: model/gltf+json
+`;
 
 async function build() {
   const startTime = Date.now();
   console.log("📦 Building production bundle...");
   try {
+    const config = readProjectConfig();
+
     // Build JS files
     const result = await Bun.build({
       ...(CONFIG.bun as BuildConfig),
@@ -73,10 +92,19 @@ async function build() {
     // Generate and save manifest files
     const manifest = generateBuildManifest(result, cssResult, buildDuration);
     saveManifestFiles(manifest);
+
+    if (config?.host === "cloudflare") {
+      // After the manifest, so it doesn't list a file the host never serves.
+      if (existsSync("public/_headers")) {
+        console.warn("⚠️  Replacing dist/_headers copied from public/");
+      }
+      await writeFile("dist/_headers", HEADERS_FILE);
+      console.log(`\n⚙️  Worker router written to ${await generateWorker()}`);
+    }
   } catch (error) {
     console.error("❌ Build failed:", error);
     process.exit(1);
   }
 }
 
-build();
+if (import.meta.main) build();

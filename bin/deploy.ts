@@ -1,6 +1,16 @@
-import { getValidatedUrlSafe } from "../src/utils/url-validator";
+import { readProjectConfig } from "./project-config";
 
-async function deploy() {
+export async function deploy() {
+  const config = readProjectConfig();
+
+  if (config?.host === "cloudflare") {
+    console.log(
+      "Cloudflare deploys from git. Push to main and Workers Builds updates " +
+        config.deployUrl
+    );
+    return;
+  }
+
   if (!process.env.VERCEL_DEPLOY_HOOK) {
     console.log("VERCEL_DEPLOY_HOOK is not set. Set it in the .env file");
     return;
@@ -17,16 +27,14 @@ async function deploy() {
   const data = await res.json();
   console.log(data);
 
-  // Use the new URL validation
-  const vercelUrl = getValidatedUrlSafe("VERCEL_URL");
-  if (vercelUrl) {
-    console.log(`\nDeployment URL: ${vercelUrl}`);
+  if (config) {
+    console.log(`\nDeployment URL: ${config.deployUrl}`);
     console.log("Check the build progress at the URL above");
   } else {
     console.log(
-      "\n⚠️  VERCEL_URL is not set or invalid. Set a valid URL in your .env file"
+      "\nNo project.config.json. Run `pnpm connect vercel` to record the deployment URL."
     );
   }
 }
 
-deploy();
+if (import.meta.main) deploy();
