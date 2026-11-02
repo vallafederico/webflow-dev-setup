@@ -32,7 +32,7 @@ export function globEagerPlugin(options: GlobPluginOptions = {}): any {
 
         while ((match = globRegex.exec(sourceCode)) !== null) {
           const [fullMatch, globPattern] = match;
-          let absolutePattern = path.resolve(importerDir, globPattern);
+          const absolutePattern = path.resolve(importerDir, globPattern);
 
           //   console.log("Processing glob pattern:", globPattern);
           //   console.log("Absolute pattern:", absolutePattern);

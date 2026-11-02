@@ -72,7 +72,7 @@ if (typeof document !== "undefined") {
 
 // Async processing queue for metrics
 const metricsUpdateQueue: Array<() => Promise<void>> = [];
-let isProcessingQueue = false;
+const isProcessingQueue = false;
 
 // Helper to schedule async work using requestIdleCallback or setTimeout fallback
 function scheduleAsyncWork(callback: () => void, urgent = false): void {
@@ -446,7 +446,7 @@ const instrumentedFunctions = new Map<
 >();
 
 // Performance marks for current frame
-let currentFrameMarks: Array<{ name: string; startTime: number }> = [];
+const currentFrameMarks: Array<{ name: string; startTime: number }> = [];
 
 // Memory tracking
 function updateMemoryMetrics() {

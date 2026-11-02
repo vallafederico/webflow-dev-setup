@@ -14,7 +14,7 @@ export function dampPow(
   smoothing: number,
   dt: number
 ): number {
-  return lerp(current, target, 1 - Math.pow(smoothing, dt));
+  return lerp(current, target, 1 - smoothing ** dt);
 }
 
 /**

@@ -154,7 +154,7 @@ ${
   }
 
 })(document,document.head,location.hostname);
-<\/script>`;
+</script>`;
 }
 
 function readConfigSafe(): {
