@@ -167,7 +167,7 @@ Upload with Wrangler, from the project folder so it uses the account in `wrangle
 pnpm wrangler r2 object put <name>-media/models/hero.glb --file ./hero.glb --content-type model/gltf-binary --remote
 ```
 
-Pass `--remote`. Without it, Wrangler writes to local storage on your machine and the upload never reaches R2. Set `--content-type` yourself: it isn't guessed from the file name. `--cache-control` sets caching.
+Pass `--remote`. Without it, Wrangler writes to local storage on your machine and the upload never reaches R2. Set `--content-type` yourself: Wrangler only sends the metadata flags you give it. `--cache-control` sets caching. Wrangler 4.155 refuses uploads over 300 MiB, so bigger files need another way to upload.
 
 ## Environment
 
