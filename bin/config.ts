@@ -16,7 +16,7 @@ const pages = getPageFiles().map((page) => {
   return `src/pages/${page}`;
 });
 
-// WF_DEV_PORT lets the tests run while `bun dev` holds the default port.
+// WF_DEV_PORT lets the tests run while `pnpm dev` holds the default port.
 const SERVE_PORT = Number(process.env.WF_DEV_PORT) || 6545;
 
 export const CONFIG = {

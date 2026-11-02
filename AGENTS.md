@@ -10,13 +10,19 @@ This agent is specialized in managing the Webflow development setup, focusing on
 - **Webflow Designer** (`editor/handled`): a module that calls `Raf.add`, `onView` or GSAP must call `onEditor` from `@/modules/_`. Don't call `handleEditor` in modules.
 - **API**: `api/` holds serverless functions that run on either Cloudflare or Vercel (`docs/hosting.md`).
 
+## Commands
+
+Run everything through pnpm: `pnpm i`, `pnpm dev`, `pnpm build`, `pnpm check`. Bun is the bundler and runtime those scripts call, at the version the lockfile pins. No global Bun is needed.
+
+Never run `bun install`, `bun add` or `bun <script>`. `bun install` replaces packages in `node_modules` and writes a `bun.lock`, and `pnpm i` then reports "Already up to date" without repairing them, so `tsc` fails with errors about `undici-types`. To recover, delete `bun.lock` and `node_modules`, then run `pnpm i --frozen-lockfile`.
+
 ## Checks
 
 - Run `pnpm check` after every change.
 - Run `pnpm check:all` before saying work is done, and report the result.
 - Run `pnpm check:live` after a push.
 - `pnpm fix` applies the safe autofixes.
-- Machine-readable output: `./node_modules/.bin/bun run bin/check/index.ts --json`.
+- Machine-readable output: `./node_modules/.bin/bun run bin/check/index.ts --json`. This is the one command that skips pnpm: when a check fails, `pnpm check --json` adds an `ELIFECYCLE` line to stdout, which breaks the JSON.
 - Exit codes: `0` passed, `1` findings, `2` a tool failed. A tool failure is never a pass.
 - Rules and fixes are in `docs/house-rules.md`. Exceptions: `// house-ignore <rule>: <reason>` on the line above.
 

@@ -2,7 +2,7 @@
  * Builds what the browser run loads, in a subprocess with NODE_ENV=production
  * so the defines and minification match `pnpm build`:
  *
- *   bun run bin/check/runtime-build.ts <production dir> <test dir>
+ *   ./node_modules/.bin/bun run bin/check/runtime-build.ts <production dir> <test dir>
  *
  * Both go to the temp folders given, never to dist/.
  */

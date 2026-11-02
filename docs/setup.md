@@ -8,18 +8,21 @@ For development you need nothing else. To deploy you need an account on one host
 
 | **Package** | **Why**                                                  |
 | ----------- | -------------------------------------------------------- |
-| pnpm        | installs the project, and pins the tool versions          |
-| Bun         | because YES. Installed by `pnpm i`, so a global one is optional |
+| pnpm        | installs the project and runs every command, and pins the tool versions |
+| Bun         | because YES. The bundler and runtime behind the commands. `pnpm i` installs it, so don't install it yourself |
 
-`bun <script>` commands need a global Bun, `pnpm <script>` doesn't. These docs use `pnpm`. To have a global Bun anyway:
+## Use pnpm, not Bun
+
+Every command here starts with `pnpm`: `pnpm i`, `pnpm dev`, `pnpm build`, `pnpm check`. The scripts call Bun for you, at the version in `pnpm-lock.yaml`, so a build on your machine and one on the host use the same Bun. A global Bun can be a different version, so don't use one for this project.
+
+Don't run `bun install`, `bun add` or `bun <script>`. `bun install` replaces packages in `node_modules` and writes a `bun.lock`. `pnpm i` then reports "Already up to date" without repairing them, and `pnpm check` fails on `tsc` with errors about `undici-types`. To recover:
 
 ```shell
-pnpm i -g bun
+rm -rf bun.lock node_modules
+pnpm i --frozen-lockfile
 ```
 
-```shell
-npm i -g bun
-```
+## Getting started
 
 > If you are on windows godspeed go google how to install those stuffs I have no idea I'm sorry good luck
 

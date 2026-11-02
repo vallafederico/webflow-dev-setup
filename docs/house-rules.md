@@ -61,3 +61,22 @@ The rules match syntax, not behaviour, so they can pass code that is wrong. Thes
 `pnpm check:all` also runs the modules in a real browser (`bin/check/runtime.ts`), which catches some of these by behaviour: a count of subscriptions and listeners that grows after `onDestroy` and a remount, an error on load, or a crash when the script runs before `<body>` exists. The browser run waits 800ms after each page loads before it judges it, so an error thrown later than that (a slow timer, a late network callback) can be missed. A green `pnpm check` means no known mistakes, not no mistakes, so run `pnpm check:all` before calling work done.
 
 Things no check decides, such as whether an animation feels right, stay with the skills in `.claude/skills/`.
+
+## The other checks
+
+House rules are one check of several. Every finding prints its own fix.
+
+| Check | Command | Proves | Rules |
+|---|---|---|---|
+| `format`, `lint` | `pnpm check` | Biome passes | Biome's own |
+| `types` | `pnpm check` | `tsc` passes | `tsc/<code>` |
+| `house-rules` | `pnpm check` | The table above | The table above |
+| `skills` | `pnpm check` | `.codex` and `.cursor` match `.claude/skills` | `pnpm sync:skills` fixes them |
+| `tests` | `pnpm check` | `bun test` reached its end and at least one test passed | `tests/failed` |
+| `build` | `pnpm check:all` | The production build succeeds. If it fails, `bundle` and `host` report `build/blocked` | `build/failed`, `build/blocked` |
+| `bundle` | `pnpm check:all` | `dist/` has every entry, stays inside the gzip budgets in `checks.config.json`, and holds no secrets, `localhost` URLs or unfilled placeholders | `bundle/localhost`, `bundle/secret`, `bundle/over-budget`, `bundle/no-budget`, `bundle/unused-budget`, `bundle/missing-entry`, `bundle/placeholder` |
+| `host` | `pnpm check:all` | The host's config is valid, and on Cloudflare a dry run and local serving work | `host/config`, `host/not-connected`, `host/api-export`, `host/vercel`, `host/wrangler`, `host/dry-run`, `host/worker`, `host/headers`, `host/serving`, `host/serving-skipped` |
+| `runtime` | `pnpm check:all`, `pnpm check:runtime` | Modules load, run in the editor and clean up in a real browser | `runtime/normal-load`, `runtime/early-load`, `runtime/editor-load`, `runtime/leak`, `runtime/hook-timeout`, `runtime/taxi`, `runtime/console-warning`, `runtime/build`, `runtime/fixture` |
+| `live` | `pnpm check:live` | The deployed files match the commit | `live/stale`, `live/no-commit`, `live/no-files`, `live/file-status`, `live/content-type`, `live/cors`, `live/manifest-path`, `live/protected`, `live/unreachable` |
+
+Any check can also report `tool/failure`, which exits 2. It means the tool didn't finish, so nothing was proved.

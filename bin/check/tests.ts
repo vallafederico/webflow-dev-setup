@@ -35,7 +35,7 @@ export const tests: Check = {
       throw new ToolFailure(
         `bun test did not finish (exit ${result.code}), so its result can't be trusted: ${excerpt(output)}`,
         {
-          fix: "Remove process.exit and anything else that stops the test run early, then run bun test ./bin/ ./src/ ./api/",
+          fix: "Remove process.exit and anything else that stops the test run early, then run ./node_modules/.bin/bun test ./bin/ ./src/ ./api/",
         }
       );
     }
@@ -61,7 +61,7 @@ export const tests: Check = {
           file: file || "bin",
           line: 1,
           message: `Test failed: ${failure[1]}`,
-          fix: `Run bun test ${file ? `./${file}` : "./bin/"} and fix the failing assertion`,
+          fix: `Run ./node_modules/.bin/bun test ${file ? `./${file}` : "./bin/"} and fix the failing assertion`,
         });
       }
     }
@@ -74,7 +74,7 @@ export const tests: Check = {
         file: "bin",
         line: 1,
         message: `bun test exited ${result.code} with ${failed} failing: ${excerpt(output, 3)}`,
-        fix: "Run bun test ./bin/ ./src/ ./api/ and fix what it reports",
+        fix: "Run ./node_modules/.bin/bun test ./bin/ ./src/ ./api/ and fix what it reports",
       });
     }
     return toResult("tests", findings);

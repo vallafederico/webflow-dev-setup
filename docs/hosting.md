@@ -183,7 +183,7 @@ Pass `--remote`. Without it, Wrangler writes to local storage on your machine an
 
 The rest of the settings live in `project.config.json`, not in env vars. There's one automatic exception: a project that has no `project.config.json` and builds on Vercel falls back to the `VERCEL_URL` that Vercel sets itself. Don't set it by hand. On Workers Builds, with no config, the build fails.
 
-The project uses pnpm, pinned by `packageManager` in `package.json`; Bun is the bundler and dev runtime and is installed as a dev dependency. Use Node 22.13 or newer.
+The project runs on pnpm, pinned by `packageManager` in `package.json`. Both hosts build with `pnpm build`: Workers Builds through the build command above, Vercel through `vercel.json`. Bun is the bundler and dev runtime that the pnpm scripts call, at the version in the lockfile, so don't use `bun` commands directly ([why](./setup.md#use-pnpm-not-bun)). Use Node 22.13 or newer.
 
 ## Moving an existing project
 

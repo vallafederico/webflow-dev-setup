@@ -289,7 +289,7 @@ export function formatTable(rows: Row[]): string {
 }
 
 if (import.meta.main) {
-  // Standalone: `bun run bin/check/serve-check.ts` after a Cloudflare build.
+  // Standalone: `./node_modules/.bin/bun run bin/check/serve-check.ts` after a Cloudflare build.
   const root = path.resolve(import.meta.dir, "..", "..");
   const { listFiles } = await import("./bundle");
   try {

@@ -36,7 +36,7 @@ export function generateLoaderScript(
   const fallback = appJs ? `"${appJs}"` : "null";
 
   // Classic (non-module) scripts do not need crossOrigin to run, so it is not
-  // set. Localhost is only reachable from the machine running `bun dev` — phones
+  // set. Localhost is only reachable from the machine running `pnpm dev` — phones
   // viewing webflow.io must skip it or they race a failed request every load.
   return `<script>
 (function(d,h,host){

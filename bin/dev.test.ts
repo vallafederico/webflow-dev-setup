@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 
 const DEV = resolve(import.meta.dir, "dev.ts");
 const SRC = resolve(import.meta.dir, "..", "src");
-// Its own port, so these still pass while `bun dev` is running.
+// Its own port, so these still pass while `pnpm dev` is running.
 const PORT = "16545";
 const ORIGIN = `http://localhost:${PORT}`;
 

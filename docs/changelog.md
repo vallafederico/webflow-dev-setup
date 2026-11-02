@@ -11,7 +11,7 @@
 ### Changed
 
 - **Deploy URL and preview suffix come from `project.config.json`**, not the `VERCEL_URL` and `PREVIEW_HOST_SUFFIX` env vars. A loader with no suffix accepts no `?js=` preview, where it used to default to `.vercel.app`. Re-paste the loader after moving a site to another host. A build on Vercel with no config still uses the `VERCEL_URL` Vercel sets itself.
-- **pnpm replaces `bun install`**. Bun stays the bundler and dev runtime.
+- **pnpm runs everything**. `pnpm i` replaces `bun install`, and `vercel.json` now builds with `pnpm build`, so Vercel uses the Bun version in the lockfile. Bun stays the bundler and dev runtime. Don't run `bun install`: see [Use pnpm, not Bun](./setup.md#use-pnpm-not-bun).
 - **`.claude/skills` is the only place skills are edited**. `pnpm sync:skills` copies them to `.codex` and `.cursor`, and `pnpm check` fails on drift.
 - **Raf timing**: Raf now passes `time` and `deltaTime` in seconds; previously the two were swapped and `time` was mis-scaled.
 - **Docs say Taxi is opt-in**, with the steps to enable it. It was already off in the template.

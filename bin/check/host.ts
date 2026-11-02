@@ -237,7 +237,7 @@ async function checkCloudflare(
       rule: "host/serving",
       file: "wrangler.jsonc",
       message: `wrangler dev: ${row.request} should give ${row.expected}, but gave ${row.actual}`,
-      fix: "Run bun run bin/check/serve-check.ts for the full table, then fix dist/_headers, the Worker router or wrangler.jsonc",
+      fix: "Run ./node_modules/.bin/bun run bin/check/serve-check.ts for the full table, then fix dist/_headers, the Worker router or wrangler.jsonc",
     });
   }
 }
@@ -249,7 +249,7 @@ function checkVercel(root: string, add: (finding: Draft) => void) {
       rule: "host/vercel",
       file: "vercel.json",
       message:
-        "vercel.json is missing, so Vercel would not build with bun bundle or add CORS headers",
+        "vercel.json is missing, so Vercel would not build with pnpm build or add CORS headers",
       fix: "Restore vercel.json from the template",
     });
   } else if (readJsonc(vercelFile).error) {

@@ -13,12 +13,14 @@ mkdir your-project && cd your-project
 # Clone this repo
 degit vallafederico/webflow-dev-setup
 
-# Install dependencies (Node 22.13 or newer and pnpm; Bun is installed as a dev dependency)
+# Install dependencies (needs Node 22.13 or newer and pnpm)
 pnpm i
 
 # Start development
 pnpm dev
 ```
+
+Use pnpm for every command, not Bun. `pnpm i` installs the Bun version the project builds with, and the pnpm scripts call it, so you don't need a global Bun. Don't run `bun install`: it breaks `node_modules` ([why, and how to recover](./docs/setup.md#use-pnpm-not-bun)).
 
 `pnpm dev` works straight away, with no accounts. Its index page (`http://localhost:6545`) shows a "run `pnpm connect`" notice until you pick a host. When you're ready to deploy, choose Cloudflare or Vercel:
 
@@ -51,6 +53,7 @@ See [Hosting](./docs/hosting.md) for the flags and the dashboard steps. Once con
 - [First-time Setup](./docs/setup.md)
 - [Hosting: Cloudflare and Vercel](./docs/hosting.md)
 - [Configuration Guide](./docs/config.md)
+- [Backend: the `api/` folder](./docs/backend.md)
 - [Changelog](./docs/changelog.md)
 
 ### System Documentation
@@ -64,20 +67,22 @@ See [Hosting](./docs/hosting.md) for the flags and the dashboard steps. Once con
 - [Loader Script](./docs/loader.md) – where JS/CSS load from, and every URL parameter
 - [Mobile JS Loading / Safari Privacy Fix](./docs/mobile-js-loading-fix.md)
 - [Branch Previews on `.webflow.io`](./docs/branch-previews.md)
-- [House Rules](./docs/house-rules.md) – what `pnpm check` enforces on modules, and how to fix it
+- [House Rules](./docs/house-rules.md) – what `pnpm check` enforces on modules, how to fix it, and what the other checks prove
 
 ### Integrations
 
 - [Webflow MCP in Cursor](./docs/webflow-mcp-cursor.md) – Use the Webflow MCP server in Cursor to manage sites, CMS, and Designer via chat
+- [Webflow MCP in Claude Code](./docs/webflow-mcp-claude-code.md) – The same server in Claude Code
 
 ### Development Guides
 
 - [Multiple Entry Points](./docs/multiple-entry-points.md)
 - [JavaScript Usage](./docs/javascript.md)
-- [Internal Architecture](./docs/bin.md)
+- [Internal Architecture](./docs/bin.md) – every `pnpm` command and the file it runs
 - [CSS Issues](./docs/css-issues.md)
 - [Environment Configuration](./docs/env-configuration.md)
 - [SSL Setup](./docs/ssl.md)
+- [Loader Script Refactoring Guide](./SETUP-GUIDE.md) – the original loader refactor
 
 ## Project Setup
 

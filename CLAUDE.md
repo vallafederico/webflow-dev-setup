@@ -21,6 +21,12 @@ This project is a custom development environment for Webflow, using a modular Ja
 
 - **Webflow Editor** (`editor/handled`): a module that calls `Raf.add`, `onView` or GSAP must call `onEditor` from `@/modules/_` to skip or reset the effect in the Designer. It releases its listener on destroy. Don't call `handleEditor` in modules.
 
+## Commands
+
+Run everything through pnpm: `pnpm i`, `pnpm dev`, `pnpm build`, `pnpm check`. Bun is the bundler and runtime those scripts call, at the version the lockfile pins. No global Bun is needed.
+
+Never run `bun install`, `bun add` or `bun <script>`. `bun install` replaces packages in `node_modules` and writes a `bun.lock`, and `pnpm i` then reports "Already up to date" without repairing them, so `tsc` fails with errors about `undici-types`. To recover, delete `bun.lock` and `node_modules`, then run `pnpm i --frozen-lockfile`.
+
 ## Checks
 
 - `pnpm check` after every change. It has no network and is fast.
@@ -28,7 +34,7 @@ This project is a custom development environment for Webflow, using a modular Ja
 - `pnpm check:all` replaces `dist/` with a production build, so restart `pnpm dev` or edit a file to get its live reload back.
 - `pnpm check:live` after a push, to compare the deployed files with the commit.
 - `pnpm fix` applies the safe autofixes (formatting, import paths).
-- `./node_modules/.bin/bun run bin/check/index.ts --json` gives machine-readable output. Add `--all` for the `check:all` set.
+- `./node_modules/.bin/bun run bin/check/index.ts --json` gives machine-readable output. Add `--all` for the `check:all` set. This is the one command that skips pnpm: when a check fails, `pnpm check --json` adds an `ELIFECYCLE` line to stdout, which breaks the JSON.
 - Exit codes: `0` passed, `1` findings, `2` a tool failed. A tool failure is never a pass.
 - Rules and how to fix them: `docs/house-rules.md`. To make an exception: `// house-ignore <rule>: <reason>` on the line above.
 

@@ -1,6 +1,6 @@
 {
-  "buildCommand": "bun bundle",
-  "devCommand": "bun api",
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm api",
   "outputDirectory": "dist",
   "headers": [
     {
