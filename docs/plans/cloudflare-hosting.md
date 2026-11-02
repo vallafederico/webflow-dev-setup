@@ -31,7 +31,7 @@ Static files from `dist/`, built on push: JS, CSS, `public/` files and build ext
 | Settings | Committed `project.config.json`. No `DEPLOY_URL` or `PREVIEW_HOST_SUFFIX` env vars, and no manually set `VERCEL_URL` |
 | Cloudflare production URL | `<project>.itsoffbrand.dev`, one Worker per project, DNS and certificate created on deploy |
 | Vercel production URL | `<project>.vercel.app` |
-| Previews | On each host's default domain. Allowlist limited to this project on Cloudflare, and to the team suffix on Vercel |
+| Previews | On each host's default domain. Allowlist limited to this project on Cloudflare, and to the team suffix on Vercel, which isn't exclusive to the project or team. See `docs/hosting.md` |
 | `public/` | Deploys with the code, so previews get their own copies |
 | Heavy media | R2 at `<project>-media.itsoffbrand.dev`, reached through `mediaUrl()`, only when a project needs it. Built last, and can ship separately |
 | Asset origin | Read in the browser from `document.currentScript.src`, with a build-time fallback |
@@ -62,7 +62,7 @@ Test these on one throwaway project before writing `pnpm connect`, because they 
 ```jsonc
 {
   "name": "acme",
-  "compatibility_date": "<date of connect>",
+  "compatibility_date": "<newest date the pinned wrangler's workerd supports>",
   "compatibility_flags": ["nodejs_compat"],
   "main": ".generated/worker.ts",
   "assets": { "directory": "./dist", "run_worker_first": ["/api/*"] },
@@ -201,7 +201,7 @@ An agent can tell whether its work is correct without asking anyone or judging b
 | `pnpm fix` | Applies safe autofixes: formatting, import paths | Whenever |
 | `pnpm new:module <name>` | Writes a module that already passes every rule | Starting a module |
 
-Every check command accepts `--json` and returns the same shape, sorted so the output is stable:
+Every check command accepts `--json` and returns the same shape, sorted so the output is stable. Use `./node_modules/.bin/bun run bin/check/index.ts --json` for this: `pnpm` appends its own failure line to stdout when a check fails.
 
 ```json
 {
@@ -236,11 +236,11 @@ Exit codes: `0` passed, `1` findings, `2` the tool itself failed. Agents must no
 
 ## House rules
 
-Each rule comes from the existing skills and Cursor rules, and was checked against `src/`. `Today` is what it flags in the current code. `imports/*` and `browser/no-process-env` cover all of `src/`. The others cover `src/modules/*.ts`, and `src/pages` where noted.
+Each rule comes from the existing skills and Cursor rules, and was checked against `src/`. `Today` is what it flags in the current code. `imports/*` and `browser/no-process-env` cover all of `src/`. The others cover `src/modules/*.{ts,js}`, and `src/pages` where noted.
 
 | Rule | Enforces | Today |
 |---|---|---|
-| `module/default-export` | `src/modules/*.ts` has a default-exported function | 0 |
+| `module/default-export` | `src/modules/*.{ts,js}` has a default-exported function | 0 |
 | `module/signature` | `(element: HTMLElement, dataset: DOMStringMap)`, or fewer parameters | `nav.ts`, `split.ts` |
 | `module/filename` | Kebab-case, not generic names like `module.ts` | 0 |
 | `imports/lifecycle` | Hooks come from `@/modules/_`. Autofixable | `split.ts` |
@@ -272,7 +272,7 @@ Taxi is opt-in. It's commented out in `src/app.ts` and `src/lib/pages.ts`, so li
 It serves them locally with generated fixture pages containing one `data-module` element per module, and a favicon. A module that needs specific markup can add `src/modules/<name>.fixture.html`, which the module glob ignores. It then:
 
 1. **Normal load:** loads the production bundle. Fails on an uncaught error or a `console.error` that isn't a network 404.
-2. **Early load:** loads the production bundle from a synchronous `<script>` in `<head>`, so it runs before `<body>` exists. Fails on any error. This is the incident in `docs/loader.md`.
+2. **Early load:** loads the production bundle from a synchronous `<script>` in `<head>`, so it runs before `<body>` exists. Fails on any error. This is the incident in `docs/loader.md`. No modules mount in this case, before or after this work, so it only catches crashes during load.
 3. **Leak test:** in the test bundle, runs `createCycles`, `runPageIn` and `runMount` and records counts. Then it runs `runPageOut` and `runDestroy`, replaces the fixture DOM, and mounts again. Fails if any count grew. The DOM must be replaced because `createCycles` skips elements it has already initialized.
 4. **Editor load:** repeats the load with the Webflow editor marker in the page, and fails on any error.
 5. **Taxi navigation:** only when `checks.config.json` has `"taxi": true`, also follows a real link between fixture pages wrapped in `data-taxi` and `data-taxi-view`.
@@ -326,10 +326,10 @@ Run all of these after the final change.
 
 1. `pnpm check` and `pnpm check:all` exit 0 on the clean repo, and `pnpm check` takes under 15 seconds.
 2. `bun test bin/check` passes, with a failing and a passing fixture for every rule.
-3. Seed a temp copy with each of these. Each must exit 1 and name the expected rule or check:
+3. Seed a temp copy with each of these. Each must exit 1 and name the expected rule or check, unless stated otherwise:
    - a module with `Raf.add` and no cleanup
    - a `tsc` error
-   - `document.body` at the top level
+   - a top-level `document.body` gives a warning and exits 0
    - a skill edited only in `.claude`
    - a 16-character deploy hook value from `.env` inside `dist/`
    - a `State.on` with an inline arrow
@@ -339,7 +339,7 @@ Run all of these after the final change.
    - a function reading `document.body.firstChild`, called at the top level of a module: early load
    - `handleEditor` used without releasing its listener: leak test
 5. Break a tool, for example with an invalid `biome.json`: the exit code is 2, not 0.
-6. Every `--json` output parses and matches the shape above. Two runs on the same code give identical output, apart from timings.
+6. Every `--json` output from the documented command parses and matches the shape above. Two runs on the same code give identical output, apart from timings.
 7. `pnpm new:module demo` passes `pnpm check` with no edits.
 8. `pnpm check:live` passes after a deploy, on both a Cloudflare and a Vercel project. It also passes for a branch with `--url`, fails against a deployment of an older commit, and exits 2 on a dirty tree. A production build still has no `localhost` URL in a project calling `apiPath()`.
 9. A pull request with a house rule violation fails CI. This needs the owner's GitHub repo.
