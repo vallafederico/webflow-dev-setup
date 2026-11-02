@@ -44,7 +44,7 @@ Built with Bun's experimental CSS bundler. Additional entrypoints can be added t
 
 ### Server
 
-- Dev server runs on port **6545** (configurable via `SERVE_PORT`)
+- Dev server runs on port **6545** (configurable via `SERVE_PORT`, or the `WF_DEV_PORT` env var when 6545 is taken)
 - API server runs on port **6546** (hardcoded in `bin/api.ts`)
 - SSL is enabled when `USE_SSL=true` in `.env` (requires certs in `./certs/`)
 
