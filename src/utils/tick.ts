@@ -1,4 +1,4 @@
-import { Raf } from "@/lib/subs";
+import { Raf } from "@lib/subs";
 
 // Flag to enable/disable all logging and sampling
 export const ENABLE_TICK_LOGGING = true;

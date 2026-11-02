@@ -23,6 +23,11 @@ class Subscribable {
     if (this.#subscribers.length < 1) return;
     this.#subscribers.forEach((f) => f.fn(data));
   }
+
+  /** Live subscriber count, for leak checks. */
+  count() {
+    return this.#subscribers.length;
+  }
 }
 
 /** Raf */
