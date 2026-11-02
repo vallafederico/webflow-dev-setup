@@ -1,7 +1,7 @@
 import gsap, { SplitText } from "@lib/gsap";
-import { onView } from "./_";
+import { onEditor, onView } from "@/modules/_";
 
-function setVisuallyHidden(element) {
+function setVisuallyHidden(element: HTMLElement) {
   element.setAttribute("aria-hidden", "true");
   element.style.position = "absolute";
   element.style.left = "-9999px";
@@ -9,7 +9,7 @@ function setVisuallyHidden(element) {
   element.style.width = "1px";
 }
 
-const splitText = (element) => {
+const splitText = (element: HTMLElement) => {
   const content = element.textContent;
   element.textContent = "";
 
@@ -31,11 +31,11 @@ const splitText = (element) => {
   return splitText;
 };
 
-export default function Split(element) {
+export default function Split(element: HTMLElement) {
   const split = splitText(element);
 
-  onView(element, {
-    autoStart: true,
+  const observer = onView(element, {
+    autoStart: false,
     callback: ({ isIn }) => {
       // console.log("inView", isIn);
 
@@ -51,5 +51,17 @@ export default function Split(element) {
         });
       }
     },
+  });
+
+  // The editor shows the text as designed, so stop observing, kill the motion
+  // and clear the offset the out-of-view state sets on the chars.
+  onEditor((isEditor) => {
+    if (isEditor) {
+      observer.stop();
+      gsap.killTweensOf(split.chars);
+      gsap.set(split.chars, { clearProps: "transform" });
+    } else {
+      observer.start();
+    }
   });
 }
