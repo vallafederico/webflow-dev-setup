@@ -5,8 +5,9 @@ import { join, resolve } from "node:path";
 
 const DEV = resolve(import.meta.dir, "dev.ts");
 const SRC = resolve(import.meta.dir, "..", "src");
-// bin/dev.ts always listens on CONFIG.SERVE_PORT, so these can't run while `pnpm dev` does.
-const ORIGIN = "http://localhost:6545";
+// Its own port, so these still pass while `bun dev` is running.
+const PORT = "16545";
+const ORIGIN = `http://localhost:${PORT}`;
 
 let dir: string;
 let proc: ReturnType<typeof Bun.spawn> | undefined;
@@ -34,7 +35,7 @@ afterEach(async () => {
 
 /** Starts `bin/dev.ts` in the temp project and resolves once its first build has finished. */
 async function startDev(): Promise<string> {
-  const env = { ...process.env, NODE_ENV: "development" } as Record<string, string | undefined>;
+  const env = { ...process.env, NODE_ENV: "development", WF_DEV_PORT: PORT } as Record<string, string | undefined>;
   delete env.USE_SSL;
   delete env.PUBLIC_ASSET_ORIGIN;
   proc = Bun.spawn(["bun", "run", DEV], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
