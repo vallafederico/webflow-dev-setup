@@ -37,7 +37,7 @@ Use `src/styles/editor.css` for styles that should only apply or adjust behavior
 
 If styles aren't updating during development:
 
-1. Make sure `bun dev` is running — the loader tries local first
+1. Make sure `pnpm dev` is running — the loader tries local first
 2. Hard-refresh the Webflow preview (Cmd+Shift+R)
 3. Check the browser console for CSS load errors
 4. If the local server is down, the loader automatically falls back to the last deployed version

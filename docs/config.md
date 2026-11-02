@@ -44,7 +44,7 @@ Built with Bun's experimental CSS bundler. Additional entrypoints can be added t
 
 ### Server
 
-- Dev server runs on port **6545** (configurable via `SERVE_PORT`, or the `WF_DEV_PORT` env var when 6545 is taken)
+- Dev server runs on port **6545** (set `WF_DEV_PORT` to change it)
 - API server runs on port **6546** (hardcoded in `bin/api.ts`)
 - SSL is enabled when `USE_SSL=true` in `.env` (requires certs in `./certs/`)
 
@@ -60,16 +60,8 @@ Host settings live in `project.config.json`, committed and written by `pnpm conn
 | `mediaUrl` | R2 media origin, or `null` |
 | `previewHostSuffix` | Hosts ending in this are accepted as branch previews (`?js=`, `?css=`) |
 
-An unconnected project has no file. `bun dev` still works, and its index page shows a "run `pnpm connect`" notice instead of the loader. A production build with no file warns, fails on Workers Builds, and on Vercel falls back to the `VERCEL_URL` that Vercel sets itself. An invalid file fails a production build.
+An unconnected project has no file. `pnpm dev` still works, and its index page shows a "run `pnpm connect`" notice instead of the loader. A production build with no file warns, fails on Workers Builds, and on Vercel falls back to the `VERCEL_URL` that Vercel sets itself. An invalid file fails a production build.
 
 ## Environment Variables
 
-See `.env.example`:
-
-| Variable | Required | Description |
-|---|---|---|
-| `USE_SSL` | No | Set to `"true"` for HTTPS local dev server |
-| `VERCEL_DEPLOY_HOOK` | No | Webhook URL for `pnpm dep` to trigger Vercel deploys. Vercel only |
-| `PUBLIC_ASSET_ORIGIN` | No | Override the origin baked into the bundle for `public/` asset URLs at build time |
-
-`pnpm connect` also reads `WF_BASE_DOMAIN` and `WF_ZONE_ID`, and Wrangler reads `CLOUDFLARE_API_TOKEN`. See [Hosting](./hosting.md#environment).
+`.env.example` lists them, and the table is in [Hosting](./hosting.md#environment). Everything else, the deploy URL and preview suffix included, is in `project.config.json` (above).

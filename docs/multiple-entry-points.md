@@ -50,7 +50,7 @@ Typically, page scripts import `app.ts` to get the base functionality, then add 
 
 ## Dev Server Index
 
-When you run `bun dev`, the index page at `http://localhost:6545` shows all JS files with badges:
+When you run `pnpm dev`, the index page at `http://localhost:6545` shows all JS files with badges:
 
 - **(fallback)** — `app.js`, loaded when no page matches
 - **(/home)** — `home.js`, loaded on `/home`
@@ -59,7 +59,7 @@ The generated loader script at the top of the page already includes the pages ma
 
 ## Adding / Removing Pages
 
-The build system auto-discovers pages on every rebuild. During `bun dev`, adding or deleting a file in `src/pages/` triggers a re-scan and rebuild — no config changes needed.
+The build system auto-discovers pages on every rebuild. During `pnpm dev`, adding or deleting a file in `src/pages/` triggers a re-scan and rebuild — no config changes needed.
 
 ## CSS
 

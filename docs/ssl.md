@@ -5,7 +5,7 @@ The dev server can serve over HTTPS, so the staging site (`https://*.webflow.io`
 ## Create the certificates
 
 ```bash
-bun run setup-ssl
+pnpm setup-ssl
 ```
 
 This runs `scripts/setup-ssl.sh`, which uses the `mkcert` npm package to:
@@ -19,7 +19,7 @@ This runs `scripts/setup-ssl.sh`, which uses the `mkcert` npm package to:
 ## Run over HTTPS
 
 ```bash
-USE_SSL=true bun dev
+USE_SSL=true pnpm dev
 ```
 
 Or set `USE_SSL=true` in `.env`. The server runs at `https://localhost:6545`, and the generated loader uses that address for local files. Without the certificates, the dev server exits with instructions.
@@ -39,4 +39,4 @@ Physical phones can't use the local server: `localhost` on a phone is the phone 
 ## Troubleshooting
 
 - **Chrome still warns about the certificate:** in `chrome://settings/security` → Manage certificates → Authorities, import `certs/ca.crt` and trust it for websites.
-- **Regenerating:** delete `certs/` and run `bun run setup-ssl` again. Re-run the Simulator command after regenerating, since the authority changes.
+- **Regenerating:** delete `certs/` and run `pnpm setup-ssl` again. Re-run the Simulator command after regenerating, since the authority changes.

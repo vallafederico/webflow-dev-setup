@@ -428,7 +428,7 @@ When building your project, the build system automatically generates `.js.txt` c
 
 ### How It Works
 
-1. **Build Process**: When you run `bun run build`, the system generates both `.js` and `.js.txt` files
+1. **Build Process**: When you run `pnpm build`, the system generates both `.js` and `.js.txt` files
 2. **Asset Upload**: Upload the `.js.txt` files to Webflow's asset panel
 3. **Script Linking**: Reference these files as external scripts in your Webflow project
 
@@ -437,7 +437,7 @@ When building your project, the build system automatically generates `.js.txt` c
 #### 1. Build Your Project
 
 ```bash
-bun run build
+pnpm build
 ```
 
 This generates files like:

@@ -13,14 +13,14 @@ mkdir your-project && cd your-project
 # Clone this repo
 degit vallafederico/webflow-dev-setup
 
-# Install dependencies (Node 22 and pnpm; Bun is installed as a dev dependency)
+# Install dependencies (Node 22.13 or newer and pnpm; Bun is installed as a dev dependency)
 pnpm i
 
 # Start development
-bun dev
+pnpm dev
 ```
 
-`bun dev` works straight away, with no accounts. Its index page (`http://localhost:6545`) shows a "run `pnpm connect`" notice until you pick a host. When you're ready to deploy, choose Cloudflare or Vercel:
+`pnpm dev` works straight away, with no accounts. Its index page (`http://localhost:6545`) shows a "run `pnpm connect`" notice until you pick a host. When you're ready to deploy, choose Cloudflare or Vercel:
 
 ```bash
 pnpm connect cloudflare   # or: pnpm connect vercel
@@ -52,7 +52,6 @@ See [Hosting](./docs/hosting.md) for the flags and the dashboard steps. Once con
 - [Hosting: Cloudflare and Vercel](./docs/hosting.md)
 - [Configuration Guide](./docs/config.md)
 - [Changelog](./docs/changelog.md)
-- [Project Rationale](./docs/rationale.md)
 
 ### System Documentation
 
@@ -163,7 +162,7 @@ All loader URL parameters are listed in [Loader Script](./docs/loader.md).
 - **Page routing**: if you have page-specific scripts in `src/pages/`, the loader auto-generates a pages map and picks the right JS file based on the URL path (e.g. `/home` loads `home.js`). Falls back to `app.js` if no page matches. See [Multiple Entry Points](./docs/multiple-entry-points.md).
 - **CSS is fully managed by the loader** — no need for separate stylesheet tags or custom CSS inside Webflow.
 
-> **Note**: Run `pnpm connect`, then `bun dev` and visit `http://localhost:6545` to get the generated loader with your actual URLs pre-filled.
+> **Note**: Run `pnpm connect`, then `pnpm dev` and visit `http://localhost:6545` to get the generated loader with your actual URLs pre-filled.
 
 ## Component System
 
@@ -225,9 +224,9 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
   });
 
   // Subscriptions
-  const rafUnsubscribe = Raf.add(({ deltaTime }) => {
+  const rafUnsubscribe = Raf.add(({ time }) => {
     if (inEditor) return;
-    element.style.transform = `rotate(${deltaTime * 50}deg)`;
+    element.style.transform = `rotate(${time * 50}deg)`;
   });
 
   const resizeUnsubscribe = Resize.add(({ width }) => {
@@ -260,7 +259,7 @@ export default function (element: HTMLElement, dataset: DOMStringMap) {
 ### Local Development
 
 ```bash
-bun dev        # Start development server
+pnpm dev       # Start development server
 pnpm add pkg   # Install packages
 ```
 
@@ -278,14 +277,14 @@ Exit code `0` means passed, `1` findings, `2` a tool failed (never a pass). CI r
 ### API Development
 
 ```bash
-bun api        # Run API locally
+pnpm api       # Run API locally
 vercel dev     # Run with Vercel capabilities (Vercel projects only)
 ```
 
 ### All (dev and APIs)
 
 ```bash
-bun all        # Run both API and dev
+pnpm all       # Run both API and dev
 ```
 
 ## Advanced Topics

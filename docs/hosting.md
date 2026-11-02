@@ -7,7 +7,7 @@ pnpm connect cloudflare
 pnpm connect vercel
 ```
 
-Webflow still serves the pages. The host only serves what the loader asks for: JS, CSS, `public/` files and the build extras (`.js.txt` copies, `build-manifest.json`). API routes are the only code that runs per request.
+Webflow still serves the pages. The host only serves what the loader asks for: JS, CSS, `public/` files and the build extras (`.js.txt` copies, `.js.map` source maps, `build-manifest.json`). Source maps are served, so the original source is public. API routes are the only code that runs per request.
 
 | | Cloudflare | Vercel |
 |---|---|---|
@@ -74,7 +74,7 @@ It's safe to run again. Existing values are the defaults, and unattended runs re
 
 **The Cloudflare account must own the base domain.** `connect` writes `account_id` into `wrangler.jsonc`, and the deploy creates `<name>.<domain>` on that account. The domain must be active as a zone on the account Wrangler uses. In testing, a deploy under an account that didn't have the domain failed with `The zone "<domain>" does not exist on your account`. With several accounts logged in, `connect` asks which one, or takes `--account-id`.
 
-Before running it, log in once: `pnpm wrangler login` (or set `CLOUDFLARE_API_TOKEN`).
+Before running it, log in once: `pnpm wrangler login` (or set `CLOUDFLARE_API_TOKEN`). `--account-id` is still needed without a Wrangler login.
 
 Then, in the Cloudflare dashboard:
 
@@ -82,7 +82,7 @@ Then, in the Cloudflare dashboard:
 2. Workers & Pages → create an application and connect the repository (Workers Builds).
 3. Set the build command to `pnpm build`. Leave the deploy command as the default.
 4. Under Branch control, enable builds for non-production branches, so each branch gets a preview URL.
-5. Run `bun dev` and paste the loader it prints into the site's custom code in Webflow.
+5. Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow.
 
 Deploys happen only from git. `pnpm dep` prints a reminder to push to `main`; it never uploads a laptop build.
 
@@ -98,8 +98,8 @@ Connect it, then in Vercel:
 
 1. Commit and push `project.config.json`. `vercel.json` is left as it is.
 2. Import the repository as a project named `<name>`, so production is `https://<name>.vercel.app`.
-3. Turn off Deployment Protection for preview deployments, or the loader can't fetch them from Webflow. See [Branch Previews](./branch-previews.md#vercel-deployment-protection).
-4. Run `bun dev` and paste the loader it prints into the site's custom code in Webflow.
+3. Turn off Deployment Protection for preview deployments, or the loader can't fetch them from Webflow. See [Branch Previews](./branch-previews.md#vercel-deployment-protection). This also makes the preview deployments' API routes public.
+4. Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow.
 
 `pnpm dep` calls the deploy hook in `VERCEL_DEPLOY_HOOK`.
 
@@ -110,13 +110,13 @@ On Vercel, `connect` assumes the production URL is `<name>.vercel.app`. If yours
 The loader only accepts `?js=` and `?css=` URLs whose host ends in `previewHostSuffix` (see [Branch Previews](./branch-previews.md)), and the bundle only trusts its own script URL as an origin on those hosts.
 
 - **Cloudflare:** the suffix is `-<name>.<subdomain>.workers.dev`. It also matches any Worker in the same account whose name ends in `-<name>`. Those are all yours, so that's accepted.
-- **Vercel:** on Vercel the suffix only proves the hostname ends in your team slug. A Vercel project on another account whose name ends in `-your-team` would also pass. The check runs on `.webflow.io` only, needs someone to open a crafted link, and is per tab (`?js=off` clears it). If that matters, put previews on a custom preview domain and use that as the suffix.
+- **Vercel:** on Vercel the suffix only proves the hostname ends in your team slug. A Vercel project on another account whose name ends in `-your-team` would also pass. The worst case: someone creates a Vercel project named like `anything-your-team` and gets a person to open a crafted `?js=` link on the `.webflow.io` staging site. That project's script then runs on the staging page, and the tab keeps loading it on every page until `?js=off` or the tab is closed. The published site is not affected. `connect` only accepts a `-<team>.vercel.app` style suffix; a custom domain cannot be used.
 
 `connect` refuses a suffix without a leading `-` or `.`, and a Vercel suffix that isn't one team label plus `.vercel.app`.
 
 ## What is served
 
-Static files from `dist/`, built on push: `app.js` and `pages/*.js`, `app.css`, the `.js.txt` copies, everything in `public/`, and `build-manifest.json`. Branch previews get their own copy of `public/`.
+Static files from `dist/`, built on push: `app.js` and `pages/*.js`, `app.css`, the `.js.txt` copies, the `.js.map` source maps (so the source is public), everything in `public/`, and `build-manifest.json`. Branch previews get their own copy of `public/`.
 
 `.js.txt` files uploaded to Webflow Assets keep working. The bundle only trusts a preview host as its script origin, so from Webflow's CDN it falls back to the deploy URL for `public/` files and `apiPath()`.
 
@@ -179,10 +179,11 @@ Pass `--remote`. Without it, Wrangler writes to local storage on your machine an
 | `VERCEL_DEPLOY_HOOK` | `pnpm dep` on Vercel | Optional |
 | `PUBLIC_ASSET_ORIGIN` | build | Overrides the origin baked into the bundle for `public/` files |
 | `USE_SSL` | dev server | `true` for HTTPS, see [SSL Setup](./ssl.md) |
+| `WF_DEV_PORT` | dev server | Port for `pnpm dev`, default 6545 |
 
 The rest of the settings live in `project.config.json`, not in env vars. There's one automatic exception: a project that has no `project.config.json` and builds on Vercel falls back to the `VERCEL_URL` that Vercel sets itself. Don't set it by hand. On Workers Builds, with no config, the build fails.
 
-The project uses pnpm, pinned by `packageManager` in `package.json`; Bun is the bundler and dev runtime and is installed as a dev dependency. Use Node 22.
+The project uses pnpm, pinned by `packageManager` in `package.json`; Bun is the bundler and dev runtime and is installed as a dev dependency. Use Node 22.13 or newer.
 
 ## Moving an existing project
 
@@ -190,7 +191,7 @@ Existing sites keep working on Vercel. Moving to Cloudflare is something you do 
 
 1. Bring the template changes into the project, then on that branch run `pnpm connect <host>` and commit `project.config.json` with them. Do this before merging to `main`, so the first production build already has its config. A Vercel build with no config still works through the `VERCEL_URL` fallback, but a Workers Builds build fails.
 2. To move to Cloudflare, run `pnpm connect cloudflare` and answer yes to the host change. Set up the Workers Builds project as above and check the Cloudflare URL serves `app.js` before changing any site.
-3. Every site's loader must then be re-pasted from `bun dev` and republished, because the loader has the deploy URL baked in. A site that stays on Vercel can keep its old loader until you choose to update it.
+3. Every site's loader must then be re-pasted from `pnpm dev` and republished, because the loader has the deploy URL baked in. A site that stays on Vercel can keep its old loader until you choose to update it.
 4. Vercel can keep running alongside. Both hosts build the same commit, and the origin baked into a bundle comes from `deployUrl` in `project.config.json`, so once it points at Cloudflare, `public/` file URLs in a bundle loaded from Vercel point at Cloudflare too. Switch off Vercel when no site loads from it.
 
 ## Checks
