@@ -115,8 +115,60 @@ describe("getBunDefine", () => {
     expect(getBunDefine()).toEqual({
       __PUBLIC_ASSET_ORIGIN__: '"https://acme.itsoffbrand.dev"',
       __MEDIA_ORIGIN__: '"https://acme-media.itsoffbrand.dev"',
+      __PREVIEW_HOST_SUFFIX__: '"-acme.team.workers.dev"',
       __API_DEV_ORIGIN__: '""',
     });
+  });
+
+  test("a PUBLIC_ASSET_ORIGIN override changes the baked-in origin, not the preview suffix", () => {
+    writeConfig();
+    process.env.PUBLIC_ASSET_ORIGIN = "https://override.example.com";
+    const define = getBunDefine();
+    expect(define.__PUBLIC_ASSET_ORIGIN__).toBe('"https://override.example.com"');
+    expect(define.__PREVIEW_HOST_SUFFIX__).toBe('"-acme.team.workers.dev"');
+  });
+
+  test("the preview suffix is empty without a config, so script origins are never trusted", () => {
+    expect(getBunDefine().__PREVIEW_HOST_SUFFIX__).toBe('""');
+  });
+
+  test("a production build fails on an invalid config", () => {
+    writeConfig({ ...config, host: "netlify" });
+    expect(() => getBunDefine()).toThrow("invalid");
+  });
+
+  test("a production build fails on an invalid config even with an override set", () => {
+    // The override skips the config read in getPublicAssetOriginForBuild, so only getBunDefine guards it.
+    process.env.PUBLIC_ASSET_ORIGIN = "https://override.example.com";
+    writeConfig({ ...config, host: "netlify" });
+    expect(() => getBunDefine()).toThrow("invalid");
+  });
+
+  test("dev logs an invalid config and carries on without it", () => {
+    process.env.NODE_ENV = "development";
+    writeConfig({ ...config, host: "netlify" });
+    const error = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const define = getBunDefine();
+      expect(define.__MEDIA_ORIGIN__).toBe('""');
+      expect(define.__PREVIEW_HOST_SUFFIX__).toBe('""');
+      expect(define.__PUBLIC_ASSET_ORIGIN__).toBe('"http://localhost:6545"');
+      expect(String(error.mock.calls[0][0])).toContain("project.config.json is invalid");
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  test("dev logs a config that isn't JSON", () => {
+    process.env.NODE_ENV = "development";
+    writeFileSync(join(dir, "project.config.json"), "{ nope");
+    const error = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => getBunDefine()).not.toThrow();
+      expect(String(error.mock.calls[0][0])).toContain("not valid JSON");
+    } finally {
+      error.mockRestore();
+    }
   });
 
   test("media origin is empty without a config or mediaUrl", () => {

@@ -1,5 +1,5 @@
 import { CONFIG } from "./config";
-import { readProjectConfig } from "./project-config";
+import { readProjectConfig, type ProjectConfig } from "./project-config";
 import { getValidatedUrlSafe } from "./url-validator";
 
 /** `bin/api.ts` listens here. */
@@ -66,10 +66,27 @@ export function getApiDevOrigin(): string {
   return `${protocol}://localhost:${API_DEV_PORT}`;
 }
 
+/**
+ * In dev an invalid config is logged and treated as missing, so the server still starts and
+ * the dev index can show the error. A production build must fail on it.
+ */
+function readConfigForDefine(): ProjectConfig | null {
+  try {
+    return readProjectConfig();
+  } catch (error) {
+    if (isProduction()) throw error;
+    console.error(`❌ ${error instanceof Error ? error.message : error}`);
+    return null;
+  }
+}
+
 export function getBunDefine(): Record<string, string> {
+  const config = readConfigForDefine();
   return {
     __PUBLIC_ASSET_ORIGIN__: JSON.stringify(getPublicAssetOriginForBuild()),
-    __MEDIA_ORIGIN__: JSON.stringify(readProjectConfig()?.mediaUrl ?? ""),
+    __MEDIA_ORIGIN__: JSON.stringify(config?.mediaUrl ?? ""),
+    // Script origins are only trusted on these hosts. Empty means never.
+    __PREVIEW_HOST_SUFFIX__: JSON.stringify(config?.previewHostSuffix ?? ""),
     __API_DEV_ORIGIN__: JSON.stringify(getApiDevOrigin()),
   };
 }
