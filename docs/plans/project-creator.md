@@ -10,7 +10,7 @@ Setup progress, checked 2026-11-11:
 - Step 5 is done for the hand tests: a user token `deploy-setup` (federico@itsoffbrand.com), with Workers Builds Configuration Edit, Workers Scripts Edit and Account Settings Read on `ob-ops`, plus DNS Read on `itsoffbrand.dev`. It expires on 2026-12-11. It lives in the gitignored `.wrangler/home/cloudflare.env` on Federico's machine. The creator Worker gets its own token when it's deployed. The Builds API accepts it, and the account has no build tokens yet.
 - Step 4 is done. Importing the test repo `itsoffbrand/creator-test` (private, repo ID `1453966759`) created the Worker `creator-test` and the default build token `creator-test build token`, UUID `d3161106-e8aa-4c3b-8f60-ddb87522a671`. Cloudflare already had the `itsoffbrand` GitHub connection, so no owner step was needed. After `.tool-versions` was fixed, the push of `afca6ea` built and deployed `https://creator-test.itsoffbrand.dev`, and the build token created the custom domain. That covers "Prove first" step 4 for production.
 - Step 7 is done through the API with a short-lived `zero-trust-setup` token (Access Edit, Zero Trust Read, DNS Edit on `itsoffbrand.dev`; expires 2026-11-18). The Zero Trust organization is `Off+Brand`, with team domain `itsoffbrand-ops.cloudflareaccess.com`, because `itsoffbrand` was already taken. Creating it asked for no plan or payment. One-time PIN is the only login method. 0 seats are used. The token can't read the plan or the seat limit, so check those under Zero Trust > Settings before the team uses it. A test Access application guards `access-test.itsoffbrand.dev` (AUD `c8dc4e41a18d940a66f6cb86441bd4329a55a8cdeaaa0c59dabd9dfeeb3bcc68`) with one Allow rule, emails ending in `@itsoffbrand.com`. The creator's own application on `new.itsoffbrand.dev` is added when it's deployed.
-- Step 6, the GitHub read token, is open. It's only needed once the creator Worker is deployed. The account's only members are two Super Administrators, `ross@` and `federico@itsoffbrand.com`.
+- Step 6 is dropped: the creator needs no GitHub token. See "Prove first" step 10. The account's only members are two Super Administrators, `ross@` and `federico@itsoffbrand.com`.
 - The Builds API refuses wrangler's OAuth login (`GET /builds/tokens` returns an authentication error), so the "Prove first" calls need the step 5 API token.
 
 ## Goal
@@ -55,14 +55,13 @@ No code is needed for this. Don't send any token through chat, email or a ticket
    - Workers Builds Configuration: Edit
    - Workers Scripts: the level that can create Workers (Workers Admin)
    - Zone DNS: Read, for `itsoffbrand.dev`
-6. **Create a GitHub read token.** A fine-grained token owned by the `itsoffbrand` org, with Metadata: Read on all repositories. The creator needs it to look up the IDs of private repos. It can't read code. The org may need to approve it.
+6. ~~Create a GitHub read token.~~ Not needed. The dev page sends the repo ID, and the creator checks it through Cloudflare's GitHub app ("Prove first" step 10).
 7. **Turn on Access.** In Zero Trust, add **One-time PIN** as a login method, because [it's no longer on by default](https://developers.cloudflare.com/cloudflare-one/changelog/access/). When the creator is deployed, add an Access application for `new.itsoffbrand.dev` with one Allow rule: **Emails ending in `@itsoffbrand.com`**. [One-time PIN with no email rule lets anyone in](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/common-policies/). Check the Zero Trust free plan's seat limit against the team size, which we haven't confirmed.
 
-**Send back to the developer:** the account ID, the `workers.dev` subdomain, the build token's UUID (`GET /accounts/<id>/builds/tokens` lists it without the secret), the test repo's name, and whether steps 1 to 7 are done. None of these are secrets. The two tokens go in as secrets by the person holding them:
+**Send back to the developer:** the account ID, the `workers.dev` subdomain, the build token's UUID (`GET /accounts/<id>/builds/tokens` lists it without the secret), the test repo's name, and whether steps 1 to 7 are done. None of these are secrets. The Cloudflare token goes in as a secret, set by the person holding it:
 
 ```bash
 pnpm wrangler secret put CLOUDFLARE_API_TOKEN
-pnpm wrangler secret put GITHUB_TOKEN
 ```
 
 ## Prove first
@@ -83,6 +82,8 @@ Results from 2026-11-11 on `itsoffbrand/creator-test-2` (private, repo ID `14540
 9. **Repo ID and Worker name.** `POST /builds/workers` rejects a body with no `repo_id`. It accepts a `repo_id` that doesn't match `repo_name` without checking, and the build clones the repo by its ID. When a repo's `wrangler.jsonc` names a different Worker, the build warns `Failed to match Worker name` and deploys to the connected Worker, so it can't overwrite another Worker's code. It still applies the config's routes, though: the test build moved `creator-test-2.itsoffbrand.dev` to itself, like step 8. Two rules for the creator follow:
    - The creator looks up the repo ID from GitHub itself. It never takes one from the request, because any org repo, including a client's, could be connected that way.
    - The creator refuses a repo already connected to a Worker, which it checks from each Worker's triggers (`repo_connection.repo_id`). Otherwise someone could name an existing project's repo in the form, and its next push would also build to the new Worker.
+
+10. **Passed: the creator needs no GitHub token.** `GET /accounts/<id>/builds/repos/github/88026844/<repo id>/config_autofill?branch=main` reads the repo through Cloudflare's GitHub app, and returns the `name` from its `wrangler.jsonc` as `default_worker_name`. It returns `12000 Not found` for a repo outside `itsoffbrand` and for an ID that doesn't exist. So the creator can take the repo ID from the dev page and check it: the repo has to be in the org, and its config has to name the exact project being created. That name has to be free, so the ID of an existing project's repo, a client's included, is refused. The check can't see the config's `routes`, which is the gap in step 8.
 
 Also found: `POST /builds/workers` returns `12002: Invalid request body` without `previews_enabled` and `previews_base_config`, so send both. `POST /builds/triggers/<trigger uuid>/builds` with `{"branch": "main"}` starts a build, for a repo that was pushed before it was connected.
 
@@ -129,7 +130,7 @@ Also found: `POST /builds/workers` returns `12002: Invalid request body` without
    - The return address is `http://localhost:<port>` or `https://localhost:<port>`, and nothing else.
 4. **Refuse an existing name.** The name must be free in D1, as a Worker on the account, and as a DNS record on the zone. This is what stops someone replacing a client's live site.
 5. Insert the D1 row with `status = creating`. The name column is unique, so two people can't claim one name.
-6. Look up the repo ID from GitHub. A 404 means it doesn't exist or isn't in the org.
+6. Check the repo ID the dev page sent with `GET /builds/repos/github/88026844/<repo id>/config_autofill?branch=main`. A 404 means it isn't an `itsoffbrand` repo. Refuse unless `default_worker_name` equals the requested name, and unless no Worker's trigger already uses that repo ID. The dev page gets the ID on the person's machine (`gh api repos/itsoffbrand/<repo> --jq .id`, or with the GitHub credential git already stores), after committing and pushing `project.config.json` and `wrangler.jsonc`. Because the config is pushed before the repo is connected, the creator starts the first build itself with `POST /builds/triggers/<trigger uuid>/builds`.
 7. Upload the placeholder Worker and get its tag.
 8. Connect the repo with the body above. If it fails, show Cloudflare's error. The app has access to every repo in the org, so this should only fail if that access changes.
 9. Set `status = created` and redirect to the return address with `state`, `name`, `domain`, `subdomain` and `accountId`. Also show the equivalent `pnpm connect cloudflare ...` command, for when the dev server isn't running.
