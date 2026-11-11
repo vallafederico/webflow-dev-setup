@@ -85,6 +85,9 @@ Results from 2026-11-11 on `itsoffbrand/creator-test-2` (private, repo ID `14540
 
 10. **Passed: the creator needs no GitHub token.** `GET /accounts/<id>/builds/repos/github/88026844/<repo id>/config_autofill?branch=main` reads the repo through Cloudflare's GitHub app, and returns the `name` from its `wrangler.jsonc` as `default_worker_name`. It returns `12000 Not found` for a repo outside `itsoffbrand` and for an ID that doesn't exist. So the creator can take the repo ID from the dev page and check it: the repo has to be in the org, and its config has to name the exact project being created. That name has to be free, so the ID of an existing project's repo, a client's included, is refused. The check can't see the config's `routes`, which is the gap in step 8.
 
+11. **A build started by branch name records the branch, not the commit.** `POST /builds/triggers/<uuid>/builds` with `{"branch": "main"}` sets `WORKERS_CI_COMMIT_SHA` to `main`. The build now asks git for the commit when the variable isn't a hash, so `pnpm check:live` matches on the first build.
+12. **The zone caches "not found" for 30 minutes** (SOA minimum 1800). The dev page's live check now asks public DNS until the domain exists, and `check:live` can connect through the public address.
+
 Also found: `POST /builds/workers` returns `12002: Invalid request body` without `previews_enabled` and `previews_base_config`, so send both. `POST /builds/triggers/<trigger uuid>/builds` with `{"branch": "main"}` starts a build, for a repo that was pushed before it was connected.
 
 ```json

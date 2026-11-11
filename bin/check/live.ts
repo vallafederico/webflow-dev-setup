@@ -1,3 +1,5 @@
+import { readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { readProjectConfig } from "../project-config";
 import { exitCodeFor, runChecks, toHuman, toJson } from "./index";
@@ -397,6 +399,107 @@ export function makeLive(options: LiveOptions, deps: LiveDeps): Check {
   };
 }
 
+/** The host's first A record from Cloudflare's public DNS, or `null`. */
+async function publicAddress(host: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`,
+      {
+        headers: { accept: "application/dns-json" },
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+    const answer = (await response.json()) as {
+      Answer?: { type: number; data: string }[];
+    };
+    return answer.Answer?.find((record) => record.type === 1)?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * fetch, except that when this computer can't resolve a host that public DNS
+ * can, it asks curl to connect to the public address. That happens right
+ * after a project's first deploy: a lookup made before the domain existed is
+ * cached as "not found" for the zone's negative TTL, 30 minutes on Cloudflare.
+ */
+export function fetchPastStaleDns(
+  log: (message: string) => void
+): LiveDeps["fetch"] {
+  const warned = new Set<string>();
+  return async (url, init) => {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      const { hostname, protocol, port } = new URL(url);
+      if (protocol !== "https:") throw error;
+      const address = await publicAddress(hostname);
+      if (!address) throw error;
+      if (!warned.has(hostname)) {
+        warned.add(hostname);
+        log(
+          `This computer can't resolve ${hostname}, but public DNS can (${address}): it probably looked the domain up before it existed and cached "not found". Checking through the public address. To clear the cache on macOS: sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`
+        );
+      }
+      const headerFile = path.join(
+        os.tmpdir(),
+        `check-live-${process.pid}-${Math.random().toString(36).slice(2)}`
+      );
+      const sent: string[] = [];
+      new Headers(init?.headers).forEach((value, key) => {
+        sent.push("-H", `${key}: ${value}`);
+      });
+      const result = await exec(
+        [
+          "curl",
+          "-sS",
+          "-L",
+          "--max-time",
+          "15",
+          "--resolve",
+          `${hostname}:${port || 443}:${address}`,
+          "-X",
+          init?.method ?? "GET",
+          ...sent,
+          "-D",
+          headerFile,
+          "-w",
+          "\n%{http_code}",
+          url,
+        ],
+        { cwd: process.cwd() }
+      );
+      let raw = "";
+      try {
+        raw = readFileSync(headerFile, "utf8");
+        rmSync(headerFile, { force: true });
+      } catch {}
+      if (result.code !== 0) throw error;
+      // With -L there's one header block per hop: keep the last.
+      const block =
+        raw
+          .trim()
+          .split(/\r?\n\r?\n/)
+          .pop() ?? "";
+      const headers = new Headers();
+      for (const line of block.split(/\r?\n/).slice(1)) {
+        const colon = line.indexOf(":");
+        if (colon > 0)
+          headers.append(
+            line.slice(0, colon).trim(),
+            line.slice(colon + 1).trim()
+          );
+      }
+      const cut = result.stdout.lastIndexOf("\n");
+      return new Response(result.stdout.slice(0, cut), {
+        status: Number(result.stdout.slice(cut + 1)) || 502,
+        headers,
+      });
+    }
+  };
+}
+
 export async function main(
   argv: string[],
   overrides: { deps?: Partial<LiveDeps>; root?: string } = {}
@@ -407,15 +510,16 @@ export async function main(
     return 2;
   }
   const root = overrides.root ?? path.resolve(import.meta.dir, "..", "..");
+  const log = (message: string) => process.stderr.write(`${message}\n`);
   const deps: LiveDeps = {
-    fetch: (url, init) => fetch(url, init),
+    fetch: fetchPastStaleDns(log),
     git: async (args) => {
       const result = await exec(["git", ...args], { cwd: root });
       return { code: result.code, stdout: result.stdout };
     },
     sleep: (ms) => Bun.sleep(ms),
     now: () => Date.now(),
-    log: (message) => process.stderr.write(`${message}\n`),
+    log,
     ...overrides.deps,
   };
   const outcome = await runChecks([makeLive(parsed.options, deps)], {

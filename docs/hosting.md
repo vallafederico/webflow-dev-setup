@@ -46,6 +46,7 @@ After that it's the same as any Cloudflare project: push `main` to deploy, push 
 - **Just the files:** `pnpm connect cloudflare --team` writes the config, named after the repo, without pushing or creating anything.
 - **If the creator refuses:** it says why, for example a name that's taken, which means renaming the repo. Fix it and press **Create on Off+Brand** on the dev page again. The same person can retry a failed attempt, and the retry picks up where it stopped.
 - **What it can't do:** change or delete an existing project, or create more than 2 projects per person per hour, or 10 a day for the team.
+- **A new domain and your DNS cache:** looking up `<name>.itsoffbrand.dev` before its first deploy makes your computer remember "not found" for 30 minutes. The dev page asks public DNS (`cloudflare-dns.com`) until the domain exists, so it never makes that lookup. If something else did, `pnpm check:live` checks through the public address and says so. Clear the cache on macOS with `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`.
 - **The domain guard:** on a shared domain, a build deploys whatever routes its `wrangler.jsonc` names, so one project could take another's domain. A Workers Builds build fails when `wrangler.jsonc` routes another host on the project's base domain, and `pnpm check:all` reports it.
 
 ## `pnpm connect`

@@ -156,9 +156,12 @@ describe("pnpm build", () => {
   });
 
   test("the manifest has paths relative to dist and the commit", () => {
-    const b = build({ WORKERS_CI_COMMIT_SHA: "abc123" }, "cloudflare");
+    const b = build(
+      { WORKERS_CI_COMMIT_SHA: "abc123abc123abc123abc123abc123abc123abc1" },
+      "cloudflare"
+    );
     const m = b.manifest();
-    expect(m.commit).toBe("abc123");
+    expect(m.commit).toBe("abc123abc123abc123abc123abc123abc123abc1");
     expect(m.javascript.files.map((f: any) => f.path)).toContain("app.js");
     expect(m.css.files.map((f: any) => f.path)).toEqual(["app.css"]);
     for (const f of [...m.javascript.files, ...m.css.files]) {
@@ -168,8 +171,35 @@ describe("pnpm build", () => {
 
   test("the manifest commit falls back to Vercel's, then null", () => {
     expect(
-      build({ VERCEL_GIT_COMMIT_SHA: "def456" }, "vercel").manifest().commit
-    ).toBe("def456");
+      build(
+        { VERCEL_GIT_COMMIT_SHA: "def456def456def456def456def456def456def4" },
+        "vercel"
+      ).manifest().commit
+    ).toBe("def456def456def456def456def456def456def4");
     expect(build({}, "vercel").manifest().commit).toBeNull();
+  });
+});
+
+describe("buildCommit", () => {
+  const { buildCommit } = require("./manifest") as typeof import("./manifest");
+  const sha = "4c9adbbf993358274f410a9850b6cafcc6bb4e90";
+  test("uses the host's hash", () => {
+    expect(buildCommit({ WORKERS_CI_COMMIT_SHA: sha }, () => undefined)).toBe(
+      sha
+    );
+    expect(buildCommit({ VERCEL_GIT_COMMIT_SHA: sha }, () => undefined)).toBe(
+      sha
+    );
+  });
+  test("a branch name in the variable falls back to git in CI", () => {
+    expect(
+      buildCommit({ WORKERS_CI: "1", WORKERS_CI_COMMIT_SHA: "main" }, () => sha)
+    ).toBe(sha);
+  });
+  test("outside CI, or with nothing usable, it's null", () => {
+    expect(buildCommit({}, () => sha)).toBeNull();
+    expect(
+      buildCommit({ WORKERS_CI: "1", WORKERS_CI_COMMIT_SHA: "main" }, () => "")
+    ).toBeNull();
   });
 });

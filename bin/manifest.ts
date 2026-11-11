@@ -1,6 +1,33 @@
 import { writeFileSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 import { existsSync } from "fs";
+import { spawnSync } from "node:child_process";
+
+const SHA = /^[0-9a-f]{40}$/;
+
+/**
+ * The commit this build is from. The host's variable is used when it holds a
+ * hash. A Workers Builds build started through the API by branch name sets
+ * WORKERS_CI_COMMIT_SHA to the branch ("main"), so a CI build then asks git,
+ * which the build has a checkout for.
+ */
+export function buildCommit(
+  env: Record<string, string | undefined> = process.env,
+  gitHead: () => string | undefined = () =>
+    spawnSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+      timeout: 5000,
+    }).stdout?.trim()
+): string | null {
+  for (const value of [env.WORKERS_CI_COMMIT_SHA, env.VERCEL_GIT_COMMIT_SHA]) {
+    if (value && SHA.test(value)) return value;
+  }
+  if (env.WORKERS_CI || env.VERCEL) {
+    const head = gitHead();
+    if (head && SHA.test(head)) return head;
+  }
+  return null;
+}
 
 interface BuildOutput {
   path: string;
@@ -115,10 +142,7 @@ export function generateBuildManifest(
   return {
     timestamp: new Date().toISOString(),
     // Lets `pnpm check:live` tell which commit a deployment was built from.
-    commit:
-      process.env.WORKERS_CI_COMMIT_SHA ||
-      process.env.VERCEL_GIT_COMMIT_SHA ||
-      null,
+    commit: buildCommit(),
     buildDuration,
     javascript: {
       files: Array.from(jsResult.outputs.values()).map(relativeToDist),

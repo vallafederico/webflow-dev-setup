@@ -58,6 +58,8 @@ export interface PendingState {
 
 const STATE_TTL_MS = 15 * 60_000;
 const defaultStates = new Map<string, PendingState>();
+/** Projects created through this dev server, so the panel waits for their first build instead of offering Create again. */
+const recentlyCreated = new Set<string>();
 
 /**
  * The dev server listens on every interface and websites can send requests to
@@ -309,6 +311,7 @@ function created(url: URL, ctx: PanelContext, cwd: string): Response {
       { status: 403 }
     );
   }
+  recentlyCreated.add(config.name);
   const text = [
     `Created "${config.name}". The first build is running and takes about a minute.`,
     "",
@@ -442,7 +445,7 @@ export function connectedPanelHtml(
           ${
             teamManaged && team
               ? `<div data-create hidden>
-            <p class="hint">Not live yet. If the Worker hasn't been created, this commits and pushes the config to main, then opens ${escapeHtml(team.creatorUrl)} to create it. You sign in there with your work email.</p>
+            <p class="hint">If the Worker hasn't been created, this commits and pushes the config to main, then opens ${escapeHtml(team.creatorUrl)} to create it. You sign in there with your work email.</p>
             <button type="button">Create on ${escapeHtml(team.name)}</button>
             <pre class="error" data-error hidden></pre>
           </div>`
@@ -468,18 +471,44 @@ export function connectedPanelHtml(
 
               var live = document.querySelector("#project [data-live]");
               var create = document.querySelector("#project [data-create]");
-              fetch(${JSON.stringify(`${config.deployUrl}/build-manifest.json`)}, { cache: "no-store" })
-                .then(function (response) {
-                  if (!response.ok) throw new Error(String(response.status));
-                  return response.json();
-                })
-                .then(function (manifest) {
-                  live.textContent = "Live" + (manifest.commit ? ", commit " + String(manifest.commit).slice(0, 7) : "") + (manifest.timestamp ? ", built " + new Date(manifest.timestamp).toLocaleString() : "");
-                })
-                .catch(function () {
-                  live.textContent = "Not live yet. A new project's first build takes about a minute.";
-                  if (create) create.hidden = false;
+              // Ask public DNS first: looking up a domain that doesn't exist yet
+              // makes this computer remember "not found" for 30 minutes.
+              var host = ${JSON.stringify(new URL(config.deployUrl).hostname)};
+              var justCreated = ${JSON.stringify(recentlyCreated.has(config.name))};
+              var started = Date.now();
+              function resolves() {
+                return fetch("https://cloudflare-dns.com/dns-query?name=" + host + "&type=A", { headers: { accept: "application/dns-json" }, cache: "no-store" })
+                  .then(function (response) { return response.json(); })
+                  .then(function (answer) { return Boolean(answer.Answer && answer.Answer.length); })
+                  .catch(function () { return true; });
+              }
+              function waiting(text) {
+                live.textContent = text;
+                // Keep checking for up to 15 minutes after a create, 1 otherwise.
+                if (Date.now() - started < (justCreated ? 15 : 1) * 60000) setTimeout(check, 10000);
+              }
+              function check() {
+                resolves().then(function (exists) {
+                  if (!exists) {
+                    if (justCreated) return waiting("First build running. The domain appears when it's done, in about a minute...");
+                    live.textContent = "Not created yet.";
+                    if (create) create.hidden = false;
+                    return;
+                  }
+                  return fetch(${JSON.stringify(`${config.deployUrl}/build-manifest.json`)}, { cache: "no-store" })
+                    .then(function (response) {
+                      if (!response.ok) throw new Error(String(response.status));
+                      return response.json();
+                    })
+                    .then(function (manifest) {
+                      live.textContent = "Live" + (manifest.commit ? ", commit " + String(manifest.commit).slice(0, 7) : "") + (manifest.timestamp ? ", built " + new Date(manifest.timestamp).toLocaleString() : "");
+                    })
+                    .catch(function () {
+                      waiting("The domain exists but isn't serving this project yet. Checking again...");
+                    });
                 });
+              }
+              check();
 
               if (!create) return;
               var button = create.querySelector("button");
