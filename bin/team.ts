@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { NAME } from "./project-config";
@@ -137,4 +137,20 @@ export function creatorLink(
   for (const [key, value] of Object.entries(params))
     url.searchParams.set(key, value);
   return url.toString();
+}
+
+/** The `origin` remote's GitHub owner and repo, read synchronously for page rendering and the CLI. */
+export function originRepo(
+  cwd: string
+): { owner: string; repo: string } | null {
+  try {
+    const result = spawnSync("git", ["remote", "get-url", "origin"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    return result.status === 0 ? parseGithubRemote(result.stdout) : null;
+  } catch {
+    return null;
+  }
 }

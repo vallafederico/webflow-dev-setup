@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
@@ -20,6 +19,7 @@ import {
   creatorLink,
   type Git,
   lookUpRepoId,
+  originRepo,
   parseGithubRemote,
   readTeamConfig,
   type TeamConfig,
@@ -269,13 +269,6 @@ async function teamCreate(req: Request, ctx: PanelContext, cwd: string) {
   const reply = (status: number, output: string, url?: string) =>
     Response.json({ ok: status === 200, output, url }, { status });
 
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return reply(400, "The request wasn't valid JSON.");
-  }
-  const name = typeof body.name === "string" ? body.name.trim() : "";
   const git = ctx.git ?? createGit(cwd);
   const gh = ctx.gh ?? createGit(cwd, "gh");
 
@@ -285,9 +278,16 @@ async function teamCreate(req: Request, ctx: PanelContext, cwd: string) {
   if (!remote || remote.owner.toLowerCase() !== team.githubOrg.toLowerCase()) {
     return reply(
       422,
-      `This folder's origin isn't a repo in github.com/${team.githubOrg}. Create one and push to it first:\n\n  gh repo create ${team.githubOrg}/${name || "<name>"} --private --source . --push`
+      `This folder's origin isn't a repo in github.com/${team.githubOrg}. Create one and push to it first:\n\n  gh repo create ${team.githubOrg}/${suggestName(basename(cwd)) ?? "<name>"} --private --source . --push`
     );
   }
+  // One repo, one project: the name is always the repo's.
+  const name = suggestName(remote.repo);
+  if (!name)
+    return reply(
+      422,
+      `"${remote.repo}" can't be a project name. Rename the repo to lowercase letters, digits and hyphens.`
+    );
   const branch = (
     await git(["rev-parse", "--abbrev-ref", "HEAD"])
   ).stdout.trim();
@@ -314,6 +314,7 @@ async function teamCreate(req: Request, ctx: PanelContext, cwd: string) {
   const lines: string[] = [];
   const code = await connect(["cloudflare", "--team", `--name=${name}`], {
     cwd,
+    origin: () => remote,
     io: quietIo(lines),
     run: withTimeout(ctx.run ?? createRunner(cwd)),
   });
@@ -604,19 +605,6 @@ export function connectedPanelHtml(
         </section>`;
 }
 
-function originRepo(cwd: string): { owner: string; repo: string } | null {
-  try {
-    const result = spawnSync("git", ["remote", "get-url", "origin"], {
-      cwd,
-      encoding: "utf8",
-      timeout: 5000,
-    });
-    return result.status === 0 ? parseGithubRemote(result.stdout) : null;
-  } catch {
-    return null;
-  }
-}
-
 /** The form shown when the project has no config. */
 export function connectFormHtml(cwd = process.cwd()): string {
   const name = suggestName(basename(cwd)) ?? "";
@@ -627,11 +615,12 @@ export function connectFormHtml(cwd = process.cwd()): string {
     team !== null &&
     remote !== null &&
     remote.owner.toLowerCase() === team.githubOrg.toLowerCase();
+  const repoName = inOrg && remote ? (suggestName(remote.repo) ?? "") : "";
   const teamBlock = team
     ? `<div data-host="team"${inOrg ? "" : " data-blocked"}>
               ${
                 inOrg && remote
-                  ? `<p class="hint">Repo: <code>${escapeHtml(`${remote.owner}/${remote.repo}`)}</code>. Pressing Create commits and pushes <code>project.config.json</code> and <code>wrangler.jsonc</code> to <code>main</code>, then opens ${escapeHtml(team.creatorUrl)}, where you sign in with your work email. It makes the Worker and starts the first build. No Cloudflare login is needed here.</p>`
+                  ? `<p class="hint">Repo: <code>${escapeHtml(`${remote.owner}/${remote.repo}`)}</code>. The project is named after it. Pressing Create commits and pushes <code>project.config.json</code> and <code>wrangler.jsonc</code> to <code>main</code>, then opens ${escapeHtml(team.creatorUrl)}, where you sign in with your work email. It makes the Worker and starts the first build. No Cloudflare login is needed here.</p>`
                   : `<p class="error">This folder's <code>origin</code> isn't a repo in github.com/${escapeHtml(team.githubOrg)}. Create one and push to it, then reload:</p><pre>gh repo create ${escapeHtml(team.githubOrg)}/${escapeHtml(name || "<name>")} --private --source . --push</pre>`
               }
             </div>`
@@ -692,6 +681,15 @@ export function connectFormHtml(cwd = process.cwd()): string {
                     field.disabled = !active;
                   });
                 });
+                // A team project is always named after its repo.
+                if (host === "team") {
+                  form.elements.name.dataset.typed = form.elements.name.dataset.typed || form.elements.name.value;
+                  form.elements.name.value = ${JSON.stringify(repoName)};
+                  form.elements.name.readOnly = true;
+                } else if (form.elements.name.readOnly) {
+                  form.elements.name.readOnly = false;
+                  form.elements.name.value = form.elements.name.dataset.typed || "";
+                }
                 var blocked = form.querySelector('[data-host="' + host + '"][data-blocked]');
                 var submit = form.querySelector("button[type=submit]");
                 submit.disabled = Boolean(blocked);

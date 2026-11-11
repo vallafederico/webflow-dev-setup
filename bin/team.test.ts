@@ -118,6 +118,7 @@ describe("pnpm connect cloudflare --team", () => {
         io: quiet(lines),
         run: noRun,
         compatibilityDate: () => "2026-10-23",
+        origin: () => ({ owner: "itsoffbrand", repo: "acme-site" }),
       })
     ).toBe(0);
     const config = JSON.parse(
@@ -148,10 +149,51 @@ describe("pnpm connect cloudflare --team", () => {
           cwd: dir,
           io: quiet(lines),
           run: noRun,
+          origin: () => ({ owner: "itsoffbrand", repo: "acme" }),
         })
       ).toBe(1);
       expect(existsSync(join(dir, "project.config.json"))).toBe(false);
     }
+  });
+
+  test("names the project after its repo", async () => {
+    const lines: string[] = [];
+    const origin = () => ({ owner: "itsoffbrand", repo: "Acme_Site" });
+    expect(
+      await connect(["cloudflare", "--team"], {
+        cwd: dir,
+        io: quiet(lines),
+        run: noRun,
+        compatibilityDate: () => "2026-10-23",
+        origin,
+      })
+    ).toBe(0);
+    expect(
+      JSON.parse(readFileSync(join(dir, "project.config.json"), "utf8")).name
+    ).toBe("acme-site");
+    expect(
+      await connect(["cloudflare", "--team", "--name", "other"], {
+        cwd: dir,
+        io: quiet(lines),
+        run: noRun,
+        origin,
+      })
+    ).toBe(1);
+    expect(lines.join("\n")).toContain('named after its repo: "acme-site"');
+  });
+
+  test("needs a repo in the org", async () => {
+    const lines: string[] = [];
+    expect(
+      await connect(["cloudflare", "--team"], {
+        cwd: dir,
+        io: quiet(lines),
+        run: noRun,
+        origin: () => ({ owner: "someone", repo: "acme" }),
+      })
+    ).toBe(1);
+    expect(lines.join("\n")).toContain("gh repo create itsoffbrand/");
+    expect(existsSync(join(dir, "project.config.json"))).toBe(false);
   });
 
   test("needs the team file", async () => {
@@ -212,9 +254,7 @@ describe("the dev page's team flow", () => {
     );
     const res = await teamPost({ name: "acme" }, { git }).response;
     expect(res.status).toBe(422);
-    expect((await res.json()).output).toContain(
-      "gh repo create itsoffbrand/acme"
-    );
+    expect((await res.json()).output).toContain("gh repo create itsoffbrand/");
     expect(existsSync(join(dir, "project.config.json"))).toBe(false);
     expect(calls.some((c) => c[0] === "push")).toBe(false);
   });

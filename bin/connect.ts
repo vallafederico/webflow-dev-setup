@@ -15,7 +15,12 @@ import {
   readProjectConfig,
   validateProjectConfig,
 } from "./project-config";
-import { readTeamConfig, TEAM_CONFIG_FILE, type TeamConfig } from "./team";
+import {
+  originRepo,
+  readTeamConfig,
+  TEAM_CONFIG_FILE,
+  type TeamConfig,
+} from "./team";
 
 export type { RunResult, Runner } from "./connect/media";
 
@@ -42,8 +47,9 @@ Flags (each one answers a prompt, so the command can run unattended):
   --account-id <id>      Cloudflare account that owns the domain (skips \`wrangler whoami\`)
   --media                Create the R2 media bucket and its domain
   --zone-id <id>         Zone ID of the base domain, for --media (env: WF_ZONE_ID)
-  --team                 Use the team's account, domain and subdomain from team.config.json.
-                         The team's creator then makes the Worker, with no Cloudflare login here
+  --team                 Use the team's account, domain and subdomain from team.config.json,
+                         and name the project after its GitHub repo. The team's creator then
+                         makes the Worker, with no Cloudflare login here
 
   vercel only:
   --suffix <suffix>      Team preview suffix, like -your-team.vercel.app`;
@@ -66,6 +72,8 @@ export interface ConnectDeps {
   env: Record<string, string | undefined>;
   /** Newest compatibility date to write. Injected so tests don't depend on the installed workerd. */
   compatibilityDate: () => string;
+  /** The GitHub repo behind `origin`, which names a team project. */
+  origin: () => { owner: string; repo: string } | null;
 }
 
 function createIo(): Io {
@@ -788,6 +796,7 @@ export async function connect(
     run: overrides.run ?? createRunner(cwd),
     env: overrides.env ?? process.env,
     compatibilityDate: overrides.compatibilityDate ?? workerdCompatibilityDate,
+    origin: overrides.origin ?? (() => originRepo(cwd)),
   };
 
   try {
@@ -857,6 +866,32 @@ async function execute(argv: string[], deps: ConnectDeps): Promise<number> {
       );
       if (!/^y(es)?$/i.test(answer))
         throw new UserError("Nothing was changed.");
+    }
+  }
+
+  if (flags.team && host === "cloudflare") {
+    const team = readTeamConfig(cwd);
+    const remote = deps.origin();
+    if (
+      team &&
+      (!remote || remote.owner.toLowerCase() !== team.githubOrg.toLowerCase())
+    ) {
+      throw new UserError(
+        `--team needs this folder's origin to be a repo in github.com/${team.githubOrg}. Create one and push to it first:\n  gh repo create ${team.githubOrg}/${suggestName(basename(cwd)) ?? "<name>"} --private --source . --push`
+      );
+    }
+    if (team && remote) {
+      // One repo, one project: a team project is always named after its repo.
+      const repoName = suggestName(remote.repo);
+      if (!repoName)
+        throw new UserError(
+          `"${remote.repo}" can't be a project name. Rename the repo to lowercase letters, digits and hyphens.`
+        );
+      if (flags.name !== undefined && flags.name !== repoName)
+        throw new UserError(
+          `With --team the project is named after its repo: "${repoName}". Leave out --name, or rename the repo.`
+        );
+      flags.name = repoName;
     }
   }
 
