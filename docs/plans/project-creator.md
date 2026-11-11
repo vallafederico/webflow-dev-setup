@@ -68,13 +68,15 @@ pnpm wrangler secret put GITHUB_TOKEN
 
 Test these by hand with `curl` on the test repo before writing the Worker, because they can change the design. The test repo gets a copy of the template from `feat/cloudflare-hosting`. These also cover the real-account checks the hosting plan is still waiting on (Part 1, done checks 8 and 9).
 
-1. A placeholder Worker can be uploaded through the API, and we can read its tag from the response or from `GET /accounts/<id>/workers/scripts`.
-2. `POST /accounts/<id>/builds/workers` connects it to a **private** org repo with the user token, using the [documented body](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/) below.
+Results from 2026-11-11 on `itsoffbrand/creator-test-2` (private, repo ID `1454001533`), all with the `deploy-setup` user token:
+
+1. **Passed.** `PUT /accounts/<id>/workers/scripts/creator-test-2` with a one-module placeholder returns the tag in `result.tag`, so no second call is needed.
+2. **Passed.** `POST /accounts/<id>/builds/workers` with the body below, unchanged, connected the private org repo. It returned `success: true` and created the production trigger for `main`. The repo was already pushed with its config, and nothing ran until the next push.
 3. Skipped: the app has access to all repositories, so there's no unlisted repo to test with.
-4. Pushing `project.config.json` and `wrangler.jsonc` to `main` builds and deploys, and creates `<name>.itsoffbrand.dev` with the default build token.
-5. Pushing a branch creates a preview that serves that branch's bundle, using `npx wrangler preview`.
-6. Inside the Worker, [`ctx.access.getIdentity()`](https://developers.cloudflare.com/changelog/post/2026-08-14-workers-access/) returns the verified email. If it doesn't, validate the [`Cf-Access-Jwt-Assertion` header](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) against the application's AUD tag.
-7. A name that already has a DNS record makes the build fail, which tells us whether the DNS check below is needed.
+4. **Passed.** The next push to `main` built and deployed in under a minute, and the build token created `creator-test-2.itsoffbrand.dev`. The deployed `build-manifest.json` has that push's commit.
+5. **Passed.** Pushing the branch `preview-test` created a preview, which built with `npx wrangler preview` and served that branch's commit at `https://preview-test-creator-test-2.ob-ops.workers.dev`. Its builds are listed under `GET /builds/workers/<tag>/previews/<preview id>/builds`, not under the Worker's own builds.
+6. Inside the Worker, [`ctx.access.getIdentity()`](https://developers.cloudflare.com/changelog/post/2026-08-14-workers-access/) returns the verified email. If it doesn't, validate the [`Cf-Access-Jwt-Assertion` header](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) against the application's AUD tag. Still open: needs setup step 7.
+7. A name that already has a DNS record makes the build fail, which tells us whether the DNS check below is needed. Still open: it needs a DNS record created on the zone, and `deploy-setup` only has DNS Read.
 
 ```json
 {

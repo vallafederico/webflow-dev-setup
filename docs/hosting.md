@@ -100,9 +100,7 @@ A build with no `project.config.json` fails on Workers Builds, because it would 
 
 `.tool-versions` lists only Node, at a version the build image already has. Workers Builds installs everything in that file, and a pnpm line there, or a Node version the image lacks, failed the build while installing tools. pnpm comes from `packageManager` through Corepack instead.
 
-Confirmed on a real Workers Builds push (2026-11-11): the default build token creates the custom domain, Workers Builds runs the pnpm version in `packageManager`, and it accepts the generated `main`.
-
-> **Not yet confirmed** (delete this note once done): the exact shape of the non-production preview URL. The preview URL shape above is from `wrangler preview`.
+Confirmed on real Workers Builds pushes (2026-11-11): the default build token creates the custom domain, Workers Builds runs the pnpm version in `packageManager`, it accepts the generated `main`, and a branch push serves that branch's bundle at `<branch>-<name>.<workers.dev subdomain>.workers.dev`.
 
 ## Vercel
 
