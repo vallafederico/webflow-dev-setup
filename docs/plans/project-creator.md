@@ -77,6 +77,9 @@ Results from 2026-11-11 on `itsoffbrand/creator-test-2` (private, repo ID `14540
 5. **Passed.** Pushing the branch `preview-test` created a preview, which built with `npx wrangler preview` and served that branch's commit at `https://preview-test-creator-test-2.ob-ops.workers.dev`. Its builds are listed under `GET /builds/workers/<tag>/previews/<preview id>/builds`, not under the Worker's own builds.
 6. Inside the Worker, [`ctx.access.getIdentity()`](https://developers.cloudflare.com/changelog/post/2026-08-14-workers-access/) returns the verified email. If it doesn't, validate the [`Cf-Access-Jwt-Assertion` header](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) against the application's AUD tag. Still open: needs setup step 7.
 7. A name that already has a DNS record makes the build fail, which tells us whether the DNS check below is needed. Still open: it needs a DNS record created on the zone, and `deploy-setup` only has DNS Read.
+8. **Failed, and it changes the design.** A Worker's custom domain can be taken by another project's build. `itsoffbrand/creator-clash-test` was connected as Worker `clash-test`, with its `wrangler.jsonc` route set to `creator-test.itsoffbrand.dev`, a domain the Worker `creator-test` already had. Its build succeeded and moved the domain to `clash-test`. Wrangler only warned that the Worker was last updated through the API. Rebuilding `creator-test` took the domain back. The default build token can edit Workers routes on every zone, so the creator's name check only protects a project when it's created. Anyone who can push to any connected repo can later point its route at another project's `*.itsoffbrand.dev`. See "Domain takeover after creation" below.
+
+Also found: `POST /builds/workers` returns `12002: Invalid request body` without `previews_enabled` and `previews_base_config`, so send both. `POST /builds/triggers/<trigger uuid>/builds` with `{"branch": "main"}` starts a build, for a repo that was pushed before it was connected.
 
 ```json
 {
@@ -167,6 +170,14 @@ Stop and report, rather than work around it, if:
 - the only way to keep this working is to give people a Cloudflare token
 
 Don't touch live Webflow sites, existing client repos or existing Workers on the account. Use only the test repo until done check 3 passes.
+
+## Domain takeover after creation
+
+Open decision, from "Prove first" step 8. A build deploys whatever route its repo's `wrangler.jsonc` names, and the build token may edit any route on the zone. So a typo, a copied repo or a bad actor can move a live project's domain to another Worker, and the build reports success. Options:
+
+- **Accept it.** Everyone with push access is on the team. Mistakes show up as a site serving the wrong bundle, and the log shows which build did it.
+- **Check in the build.** `pnpm build` fails when `wrangler.jsonc` routes name anything other than `<name>.itsoffbrand.dev` for the Worker's own name. This catches mistakes, not someone who edits the check out.
+- **Take routes away from the build.** The creator attaches the domain itself through the Workers domains API, the projects' `wrangler.jsonc` has no `routes`, and the build token can't edit routes. That needs a custom build token, and whether Builds accepts one is untested.
 
 ## Known limits
 
