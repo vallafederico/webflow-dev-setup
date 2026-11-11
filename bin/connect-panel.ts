@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
@@ -16,14 +17,12 @@ import {
 } from "./project-config";
 import {
   createGit,
-  creatorLink,
   type Git,
-  lookUpRepoId,
   originRepo,
-  parseGithubRemote,
   readTeamConfig,
   type TeamConfig,
 } from "./team";
+import { prepareTeamProject } from "./team-setup";
 
 const API = "https://api.cloudflare.com/client/v4";
 const RUN_TIMEOUT_MS = 30_000;
@@ -241,15 +240,6 @@ async function submit(req: Request, ctx: PanelContext, cwd: string) {
   );
 }
 
-function quietIo(lines: string[]): Io {
-  return {
-    interactive: false,
-    ask: async () => "",
-    log: (message) => lines.push(message),
-    error: (message) => lines.push(message),
-  };
-}
-
 function onTeamDomain(config: ProjectConfig, team: TeamConfig): boolean {
   return (
     config.host === "cloudflare" &&
@@ -266,115 +256,30 @@ function onTeamDomain(config: ProjectConfig, team: TeamConfig): boolean {
 async function teamCreate(req: Request, ctx: PanelContext, cwd: string) {
   const team = readTeamConfig(cwd);
   if (!team) return new Response("Not found", { status: 404 });
-  const reply = (status: number, output: string, url?: string) =>
-    Response.json({ ok: status === 200, output, url }, { status });
-
-  const git = ctx.git ?? createGit(cwd);
-  const gh = ctx.gh ?? createGit(cwd, "gh");
-
-  const remote = parseGithubRemote(
-    (await git(["remote", "get-url", "origin"])).stdout
-  );
-  if (!remote || remote.owner.toLowerCase() !== team.githubOrg.toLowerCase()) {
-    return reply(
-      422,
-      `This folder's origin isn't a repo in github.com/${team.githubOrg}. Create one and push to it first:\n\n  gh repo create ${team.githubOrg}/${suggestName(basename(cwd)) ?? "<name>"} --private --source . --push`
-    );
-  }
-  // One repo, one project: the name is always the repo's.
-  const name = suggestName(remote.repo);
-  if (!name)
-    return reply(
-      422,
-      `"${remote.repo}" can't be a project name. Rename the repo to lowercase letters, digits and hyphens.`
-    );
-  const branch = (
-    await git(["rev-parse", "--abbrev-ref", "HEAD"])
-  ).stdout.trim();
-  if (branch !== "main") {
-    return reply(
-      422,
-      `You're on "${branch}". The first build runs from main, so switch to main and try again.`
-    );
-  }
-
-  let existing: ProjectConfig | null = null;
-  try {
-    existing = readProjectConfig(cwd);
-  } catch (error) {
-    return reply(422, String(error instanceof Error ? error.message : error));
-  }
-  if (existing && !onTeamDomain(existing, team)) {
-    return reply(
-      409,
-      `This project is already connected to ${existing.deployUrl}. To move it to ${team.name}, run pnpm connect cloudflare --team --yes in a terminal.`
-    );
-  }
-
-  const lines: string[] = [];
-  const code = await connect(["cloudflare", "--team", `--name=${name}`], {
+  const result = await prepareTeamProject({
     cwd,
-    origin: () => remote,
-    io: quietIo(lines),
+    team,
+    git: ctx.git ?? createGit(cwd),
+    gh: ctx.gh ?? createGit(cwd, "gh"),
     run: withTimeout(ctx.run ?? createRunner(cwd)),
-  });
-  if (code !== 0) return reply(422, lines.join("\n"));
-  await ctx.onConnected().catch((error) => {
-    lines.push(`\nThe rebuild failed, so edit a file to retry it: ${error}`);
-  });
-
-  const files = [PROJECT_CONFIG_FILE, "wrangler.jsonc"];
-  await git(["add", "--", ...files]);
-  const staged = await git(["diff", "--cached", "--quiet", "--", ...files]);
-  if (staged.code === 1) {
-    const commit = await git([
-      "commit",
-      "-m",
-      `Connect to ${team.name} hosting as ${name}`,
-      "--",
-      ...files,
-    ]);
-    if (commit.code !== 0)
-      return reply(
-        422,
-        `The config is written, but git couldn't commit it:\n${commit.stderr || commit.stdout}`
-      );
-  }
-  const push = await git(["push", "origin", "HEAD:main"]);
-  if (push.code !== 0)
-    return reply(
-      422,
-      `The config is committed, but git couldn't push it:\n${push.stderr || push.stdout}\nPush main yourself, then press the button again.`
-    );
-
-  const repoId = await lookUpRepoId(remote.owner, remote.repo, {
-    gh,
-    git,
     fetch: ctx.fetch ?? fetch,
+    onConnected: ctx.onConnected,
   });
-  if (!repoId)
-    return reply(
-      422,
-      "Pushed, but couldn't look up the repo's ID with your GitHub login. Run gh auth login, then press the button again."
+  if (!result.ok)
+    return Response.json(
+      { ok: false, output: [...result.log, result.message].join("\n") },
+      { status: result.status }
     );
-
   const state = crypto.randomUUID();
-  const states = ctx.states ?? defaultStates;
-  states.set(state, {
-    name,
+  (ctx.states ?? defaultStates).set(state, {
+    name: result.name,
     expires: (ctx.now ?? Date.now)() + STATE_TTL_MS,
   });
-  return reply(
-    200,
-    lines.join("\n"),
-    creatorLink(team, {
-      name,
-      repo: `${remote.owner}/${remote.repo}`,
-      repoId,
-      state,
-      return: new URL(req.url).origin,
-    })
-  );
+  return Response.json({
+    ok: true,
+    output: result.log.join("\n"),
+    url: result.link({ state, return: new URL(req.url).origin }),
+  });
 }
 
 /**
@@ -611,17 +516,28 @@ export function connectFormHtml(cwd = process.cwd()): string {
   const domain = process.env.WF_BASE_DOMAIN ?? "";
   const team = readTeamConfig(cwd);
   const remote = team ? originRepo(cwd) : null;
+  const hasOrigin =
+    team !== null &&
+    spawnSync("git", ["remote", "get-url", "origin"], { cwd, timeout: 5000 })
+      .status === 0;
   const inOrg =
     team !== null &&
     remote !== null &&
     remote.owner.toLowerCase() === team.githubOrg.toLowerCase();
-  const repoName = inOrg && remote ? (suggestName(remote.repo) ?? "") : "";
+  // With no origin, the button creates <org>/<folder name>, so that's the name.
+  const repoName =
+    inOrg && remote ? (suggestName(remote.repo) ?? "") : hasOrigin ? "" : name;
+  const after = team
+    ? `commits and pushes <code>project.config.json</code> and <code>wrangler.jsonc</code> to <code>main</code>, then opens ${escapeHtml(team.creatorUrl)}, where you sign in with your work email. It makes the Worker and starts the first build. No Cloudflare login is needed.`
+    : "";
   const teamBlock = team
-    ? `<div data-host="team"${inOrg ? "" : " data-blocked"}>
+    ? `<div data-host="team"${inOrg || !hasOrigin ? "" : " data-blocked"}>
               ${
                 inOrg && remote
-                  ? `<p class="hint">Repo: <code>${escapeHtml(`${remote.owner}/${remote.repo}`)}</code>. The project is named after it. Pressing Create commits and pushes <code>project.config.json</code> and <code>wrangler.jsonc</code> to <code>main</code>, then opens ${escapeHtml(team.creatorUrl)}, where you sign in with your work email. It makes the Worker and starts the first build. No Cloudflare login is needed here.</p>`
-                  : `<p class="error">This folder's <code>origin</code> isn't a repo in github.com/${escapeHtml(team.githubOrg)}. Create one and push to it, then reload:</p><pre>gh repo create ${escapeHtml(team.githubOrg)}/${escapeHtml(name || "<name>")} --private --source . --push</pre>`
+                  ? `<p class="hint">Repo: <code>${escapeHtml(`${remote.owner}/${remote.repo}`)}</code>. The project is named after it. Create ${after}</p>`
+                  : !hasOrigin
+                    ? `<p class="hint">No GitHub repo yet. Create makes the private repo <code>${escapeHtml(team.githubOrg)}/${escapeHtml(name || "<folder>")}</code> with your <code>gh</code> login and pushes this folder, then ${after}</p>`
+                    : `<p class="error">This folder's <code>origin</code> isn't a repo in github.com/${escapeHtml(team.githubOrg)}. Team projects live in the org: move the repo there, or point <code>origin</code> at a repo in it, then reload.</p>`
               }
             </div>`
     : "";

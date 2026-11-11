@@ -14,6 +14,8 @@ This agent is specialized in managing the Webflow development setup, focusing on
 
 Run everything through pnpm: `pnpm i`, `pnpm dev`, `pnpm build`, `pnpm check`. Bun is the bundler and runtime those scripts call, at the version the lockfile pins. No global Bun is needed.
 
+To host an Off+Brand project (any project with `team.config.json`), run `pnpm team:create --json`, give the person the `creatorUrl` to confirm with their email code, then run `pnpm check:live --timeout 5m`. No Cloudflare login or token is ever needed. The `offbrand-team-setup` skill has the details.
+
 Never run `bun install`, `bun add` or `bun <script>`. `bun install` replaces packages in `node_modules` and writes a `bun.lock`, and `pnpm i` then reports "Already up to date" without repairing them, so `tsc` fails with errors about `undici-types`. To recover, delete `bun.lock` and `node_modules`, then run `pnpm i --frozen-lockfile`.
 
 ## Checks

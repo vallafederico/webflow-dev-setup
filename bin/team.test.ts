@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { connect, projectLinks, type Io } from "./connect";
+import { connect, projectLinks, suggestName, type Io } from "./connect";
 import {
   connectedPanelHtml,
   connectFormHtml,
@@ -240,7 +240,7 @@ describe("the dev page's team flow", () => {
       "project.config.json",
       "wrangler.jsonc",
     ]);
-    expect(calls).toContainEqual(["push", "origin", "HEAD:main"]);
+    expect(calls).toContainEqual(["push", "-u", "origin", "HEAD:main"]);
   });
 
   test("refuses a repo outside the org, and touches nothing", async () => {
@@ -254,9 +254,56 @@ describe("the dev page's team flow", () => {
     );
     const res = await teamPost({ name: "acme" }, { git }).response;
     expect(res.status).toBe(422);
-    expect((await res.json()).output).toContain("gh repo create itsoffbrand/");
+    expect((await res.json()).output).toContain(
+      "isn't in github.com/itsoffbrand"
+    );
     expect(existsSync(join(dir, "project.config.json"))).toBe(false);
     expect(calls.some((c) => c[0] === "push")).toBe(false);
+  });
+
+  test("with no repo yet, creates <org>/<folder> with gh and names the project after it", async () => {
+    const calls: string[][] = [];
+    const ghCalls: string[][] = [];
+    const git = fakeGit(
+      {
+        ...IN_ORG,
+        "remote get-url": { code: 2, stderr: "error: No such remote 'origin'" },
+        "rev-parse --verify": { code: 128 },
+      },
+      calls
+    );
+    const gh = fakeGit({ repo: {}, api: { stdout: "77\n" } }, ghCalls);
+    const res = await teamPost({}, { git, gh }).response;
+    const result = await res.json();
+    expect(res.status).toBe(200);
+    const folder = suggestName(dir.split("/").pop() as string) as string;
+    expect(calls).toContainEqual(["init", "-b", "main"]);
+    expect(calls).toContainEqual(["add", "-A"]);
+    expect(ghCalls[0]).toEqual([
+      "repo",
+      "create",
+      `itsoffbrand/${folder}`,
+      "--private",
+      "--source",
+      ".",
+      "--push",
+    ]);
+    expect(new URL(result.url).searchParams.get("name")).toBe(folder);
+    expect(new URL(result.url).searchParams.get("repoId")).toBe("77");
+  });
+
+  test("if gh can't create the repo it says how to fix it, and writes no config", async () => {
+    const git = fakeGit({ ...IN_ORG, "remote get-url": { code: 2 } });
+    const gh = fakeGit({
+      repo: {
+        code: 1,
+        stderr: "gh: To get started with GitHub CLI, please run: gh auth login",
+      },
+    });
+    const res = await teamPost({}, { git, gh }).response;
+    expect(res.status).toBe(422);
+    expect((await res.json()).output).toContain("gh auth login");
+    expect(existsSync(join(dir, "project.config.json"))).toBe(false);
   });
 
   test("refuses another branch", async () => {

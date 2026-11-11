@@ -20,6 +20,7 @@
     "dep": "bun run bin/deploy.ts",
     "setup-ssl": "chmod +x scripts/setup-ssl.sh && ./scripts/setup-ssl.sh",
     "connect": "bun run bin/connect.ts",
+    "team:create": "bun run bin/team-create.ts",
     "check": "bun run bin/check/index.ts",
     "check:all": "bun run bin/check/index.ts --all",
     "check:runtime": "bun run bin/check/index.ts --only runtime",
