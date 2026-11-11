@@ -2,6 +2,16 @@
 
 Status: ready to implement once "Setup for the account owners" is done. Nothing here is built yet.
 
+Setup progress, checked 2026-11-11:
+
+- Step 1 is done. `itsoffbrand.dev` is active on the account `ob-ops` (ID `5397e49e27a3bdf3feb44682527cc6e6`), whose `workers.dev` subdomain is `ob-ops`. The account has no Workers yet.
+- Step 3 is done. An org owner installed the GitHub app on `itsoffbrand` with access to all repositories. Still to confirm: which Cloudflare user connected it.
+- Step 2 is deferred. For now steps 4 and 5 are done as `federico@itsoffbrand.com`, not an ops user. Moving them to an ops user is in Known limits.
+- Step 5 is done for the hand tests: a user token `deploy-setup` (federico@itsoffbrand.com), with Workers Builds Configuration Edit, Workers Scripts Edit and Account Settings Read on `ob-ops`, plus DNS Read on `itsoffbrand.dev`. It expires on 2026-12-11. It lives in the gitignored `.wrangler/home/cloudflare.env` on Federico's machine. The creator Worker gets its own token when it's deployed. The Builds API accepts it, and the account has no build tokens yet.
+- Step 4 is done. Importing the test repo `itsoffbrand/creator-test` (private, repo ID `1453966759`) created the Worker `creator-test` and the default build token `creator-test build token`, UUID `d3161106-e8aa-4c3b-8f60-ddb87522a671`. Cloudflare already had the `itsoffbrand` GitHub connection, so no owner step was needed. After `.tool-versions` was fixed, the push of `afca6ea` built and deployed `https://creator-test.itsoffbrand.dev`, and the build token created the custom domain. That covers "Prove first" step 4 for production.
+- Steps 6 and 7 are open. The account's only members are two Super Administrators, `ross@` and `federico@itsoffbrand.com`.
+- The Builds API refuses wrangler's OAuth login (`GET /builds/tokens` returns an authentication error), so the "Prove first" calls need the step 5 API token.
+
 ## Goal
 
 Someone at Off+Brand starts a project, presses one button on the `pnpm dev` page, confirms an email code, and gets a working deploy link and loader. They need no Cloudflare login, no token and no dashboard steps.
@@ -36,10 +46,9 @@ No code is needed for this. Don't send any token through chat, email or a ticket
 **Who:** someone who is an admin on the Cloudflare account that owns `itsoffbrand.dev`, and an owner of the [`itsoffbrand`](https://github.com/itsoffbrand) GitHub org. These can be two people.
 
 1. **Confirm the account.** In Cloudflare, confirm `itsoffbrand.dev` is an active domain on the account, and note the account ID and the `workers.dev` subdomain.
-2. **Create a dedicated ops user.** Add a user such as `ops@itsoffbrand.com` to the account. [The Builds API only accepts user tokens](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/), so the token stops working if the person who made it leaves. Do steps 3 to 5 logged in as this user.
+2. **Create a dedicated ops user.** Add a user such as `ops@itsoffbrand.com` to the account. [The Builds API only accepts user tokens](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/), so the token stops working if the person who made it leaves. Do steps 3 to 5 logged in as this user. (Deferred for now: see Known limits.)
 3. **Install the GitHub app** (needs a GitHub org owner or the GitHub Apps Manager role). In Workers & Pages, open any Worker, or create one by importing a repo, then go to **Settings > Builds > Connect**. Choose GitHub and authorize the app for **`itsoffbrand`**, not a personal account.
-   - Choose **Only select repositories** and pick one test repo for now. The org has 178 private repos, and "All repositories" lets the app read all of them.
-   - The owner decides later whether to switch to "All repositories". Without it, each new repo has to be added by hand before the Create button works for it.
+   - Done with **All repositories**, so every new repo in the org works with the Create button without being added by hand. The trade-off is that the app can read all of the org's repos (180 now).
 4. **Create a build token.** In that Worker, go to **Settings > Builds > API token** and let Cloudflare create the default one. It's needed because [only the default token includes Workers Routes edit for all zones](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/), which is what creates each project's domain. There's no documented API for creating one.
 5. **Create the Cloudflare API token** at `dash.cloudflare.com/profile/api-tokens`, as a user token, with:
    - Workers Builds Configuration: Edit
@@ -61,7 +70,7 @@ Test these by hand with `curl` on the test repo before writing the Worker, becau
 
 1. A placeholder Worker can be uploaded through the API, and we can read its tag from the response or from `GET /accounts/<id>/workers/scripts`.
 2. `POST /accounts/<id>/builds/workers` connects it to a **private** org repo with the user token, using the [documented body](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/) below.
-3. Without the repo in the app's selected list, that call fails with a readable error.
+3. Skipped: the app has access to all repositories, so there's no unlisted repo to test with.
 4. Pushing `project.config.json` and `wrangler.jsonc` to `main` builds and deploys, and creates `<name>.itsoffbrand.dev` with the default build token.
 5. Pushing a branch creates a preview that serves that branch's bundle, using `npx wrangler preview`.
 6. Inside the Worker, [`ctx.access.getIdentity()`](https://developers.cloudflare.com/changelog/post/2026-08-14-workers-access/) returns the verified email. If it doesn't, validate the [`Cf-Access-Jwt-Assertion` header](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) against the application's AUD tag.
@@ -112,7 +121,7 @@ Test these by hand with `curl` on the test repo before writing the Worker, becau
 5. Insert the D1 row with `status = creating`. The name column is unique, so two people can't claim one name.
 6. Look up the repo ID from GitHub. A 404 means it doesn't exist or isn't in the org.
 7. Upload the placeholder Worker and get its tag.
-8. Connect the repo with the body above. If the app can't see the repo, say who to ask to add it.
+8. Connect the repo with the body above. If it fails, show Cloudflare's error. The app has access to every repo in the org, so this should only fail if that access changes.
 9. Set `status = created` and redirect to the return address with `state`, `name`, `domain`, `subdomain` and `accountId`. Also show the equivalent `pnpm connect cloudflare ...` command, for when the dev server isn't running.
 
 If a step fails, set `status = failed` and record the step. Only the same person, with the same name and repo, can retry, and the retry continues from where it stopped. A failed placeholder is removed by hand, since the Worker has no delete code.
@@ -160,5 +169,7 @@ Don't touch live Webflow sites, existing client repos or existing Workers on the
 ## Known limits
 
 - The token belongs to one user. [Account-owned tokens aren't supported yet](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/). When they are, move to one.
+  - Tested on 2026-11-11 with an Account API Token on `ob-ops` that had Workers CI (Legacy) Edit, the closest permission offered, since the account token form has no "Workers Builds Configuration". The token verified as active, and it could list Workers and read the zone, but `GET /builds/tokens` and `GET /builds/repos/connections` both returned `12006: Invalid token`. So Builds still needs a user token.
+- For now the build token and API token belong to `federico@itsoffbrand.com`. Before other people rely on the creator, add the ops user from setup step 2, redo steps 4 and 5 as that user, and replace the creator's `CLOUDFLARE_API_TOKEN` secret and `BUILD_TOKEN_UUID` var. Until then, both stop working if that user leaves or loses access.
 - Anyone with an `@itsoffbrand.com` email and a repo in the org can create projects. That's the point, and the limits and log are the protection.
 - Nothing cleans up old projects. Deleting one stays a manual job for an account admin.
