@@ -15,6 +15,7 @@ import {
   readProjectConfig,
   validateProjectConfig,
 } from "./project-config";
+import { readTeamConfig, TEAM_CONFIG_FILE, type TeamConfig } from "./team";
 
 export type { RunResult, Runner } from "./connect/media";
 
@@ -41,6 +42,8 @@ Flags (each one answers a prompt, so the command can run unattended):
   --account-id <id>      Cloudflare account that owns the domain (skips \`wrangler whoami\`)
   --media                Create the R2 media bucket and its domain
   --zone-id <id>         Zone ID of the base domain, for --media (env: WF_ZONE_ID)
+  --team                 Use the team's account, domain and subdomain from team.config.json.
+                         The team's creator then makes the Worker, with no Cloudflare login here
 
   vercel only:
   --suffix <suffix>      Team preview suffix, like -your-team.vercel.app`;
@@ -423,6 +426,42 @@ export function workerdCompatibilityDate(): string {
   }
 }
 
+export interface ProjectLink {
+  label: string;
+  url: string;
+}
+
+/**
+ * Where to find the project once it's deployed, worked out from the config
+ * alone, so they can be printed the moment it's connected.
+ */
+export function projectLinks(
+  config: ProjectConfig,
+  accountId?: string
+): ProjectLink[] {
+  const links: ProjectLink[] = [
+    { label: "Live bundle", url: `${config.deployUrl}/app.js` },
+    { label: "Build manifest", url: `${config.deployUrl}/build-manifest.json` },
+  ];
+  if (config.host === "cloudflare") {
+    links.push({
+      label: "Branch previews",
+      url: `https://<branch>${config.previewHostSuffix}`,
+    });
+    if (accountId)
+      links.push({
+        label: "Builds",
+        url: `https://dash.cloudflare.com/${accountId}/workers/services/view/${config.name}/production/builds`,
+      });
+  } else {
+    links.push({
+      label: "Branch previews",
+      url: `https://${config.name}-git-<branch>${config.previewHostSuffix}`,
+    });
+  }
+  return links;
+}
+
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -470,6 +509,7 @@ function parseFlags(argv: string[]) {
       suffix: { type: "string" },
       media: { type: "boolean" },
       "zone-id": { type: "string" },
+      team: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
     },
@@ -482,6 +522,7 @@ const FLAG_HOSTS: Record<string, ProjectHost> = {
   "account-id": "cloudflare",
   media: "cloudflare",
   "zone-id": "cloudflare",
+  team: "cloudflare",
   suffix: "vercel",
 };
 
@@ -499,6 +540,30 @@ async function planCloudflare(
   mediaUrl: string | null
 ): Promise<Plan> {
   const { io, env, cwd } = deps;
+  let team: TeamConfig | null = null;
+  if (flags.team) {
+    team = readTeamConfig(cwd);
+    if (!team)
+      throw new UserError(
+        `--team needs a valid ${TEAM_CONFIG_FILE}. Restore it from the template.`
+      );
+    for (const flag of ["domain", "subdomain", "account-id"] as const) {
+      if (flags[flag] !== undefined)
+        throw new UserError(
+          `--team sets --${flag} from ${TEAM_CONFIG_FILE}, so leave it out.`
+        );
+    }
+    if (flags.media)
+      throw new UserError(
+        "--media needs a Cloudflare login, so it can't be used with --team. Ask an account admin."
+      );
+    flags = {
+      ...flags,
+      domain: team.cloudflare.domain,
+      subdomain: team.cloudflare.subdomain,
+      "account-id": team.cloudflare.accountId,
+    };
+  }
   const wranglerPath = resolve(cwd, WRANGLER_FILE);
   const currentWrangler = readJsonc(wranglerPath);
   const currentText = currentWrangler
@@ -645,15 +710,26 @@ async function planCloudflare(
       `${PROJECT_CONFIG_FILE}  deployUrl ${config.deployUrl}`,
       `${WRANGLER_FILE}  account_id ${accountId}`,
       ...(mediaUrl ? [`mediaUrl ${mediaUrl}`] : []),
+      "",
+      ...projectLinks(config, accountId).map(
+        (link) => `${link.label.padEnd(16)} ${link.url}`
+      ),
     ],
-    steps: [
-      `Make sure ${domain} is an active zone on Cloudflare account ${accountId}, the account written to ${WRANGLER_FILE}. If it is on another account, deploy cannot create ${name}.${domain}.`,
-      "Commit and push " + `${PROJECT_CONFIG_FILE} and ${WRANGLER_FILE}.`,
-      "In the Cloudflare dashboard open Workers & Pages, create an application and connect this repository (Workers Builds).",
-      "Set the build command to `pnpm build`. Leave the deploy command as the default.",
-      "Under Branch control, enable builds for non-production branches, so each branch gets a preview URL.",
-      "Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow. It replaces any loader you pasted before connecting.",
-    ],
+    steps: team
+      ? [
+          `Commit and push ${PROJECT_CONFIG_FILE} and ${WRANGLER_FILE} to main.`,
+          `Create the Worker: on the pnpm dev page press "Create on ${team.name}", or open ${team.creatorUrl}/new and sign in with your work email. Nobody needs a Cloudflare login.`,
+          "The first build starts straight away. Run `pnpm check:live` a minute later to confirm it's live.",
+          "Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow. It replaces any loader you pasted before connecting.",
+        ]
+      : [
+          `Make sure ${domain} is an active zone on Cloudflare account ${accountId}, the account written to ${WRANGLER_FILE}. If it is on another account, deploy cannot create ${name}.${domain}.`,
+          "Commit and push " + `${PROJECT_CONFIG_FILE} and ${WRANGLER_FILE}.`,
+          "In the Cloudflare dashboard open Workers & Pages, create an application and connect this repository (Workers Builds).",
+          "Set the build command to `pnpm build`. Leave the deploy command as the default.",
+          "Under Branch control, enable builds for non-production branches, so each branch gets a preview URL.",
+          "Run `pnpm dev` and paste the loader it prints into the site's custom code in Webflow. It replaces any loader you pasted before connecting.",
+        ],
   };
 }
 
@@ -683,7 +759,13 @@ async function planVercel(
   };
   return {
     files: { [PROJECT_CONFIG_FILE]: json(config) },
-    summary: [`${PROJECT_CONFIG_FILE}  deployUrl ${config.deployUrl}`],
+    summary: [
+      `${PROJECT_CONFIG_FILE}  deployUrl ${config.deployUrl}`,
+      "",
+      ...projectLinks(config).map(
+        (link) => `${link.label.padEnd(16)} ${link.url}`
+      ),
+    ],
     steps: [
       `Commit and push ${PROJECT_CONFIG_FILE}. vercel.json is left as it is.`,
       `In Vercel, import this repository as a project named "${name}", so production is ${config.deployUrl}.`,
@@ -814,7 +896,7 @@ async function execute(argv: string[], deps: ConnectDeps): Promise<number> {
       ? `Connected "${name}" to ${host}. Wrote ${changed.join(" and ")}.`
       : `Connected "${name}" to ${host}. Nothing changed.`
   );
-  for (const line of plan.summary) io.log(`  ${line}`);
+  for (const line of plan.summary) io.log(line ? `  ${line}` : "");
   io.log(
     `\nNext steps:\n${plan.steps.map((step, i) => `  ${i + 1}. ${step}`).join("\n")}`
   );

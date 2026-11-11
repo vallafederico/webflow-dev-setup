@@ -24,7 +24,7 @@ Use pnpm for every command, not Bun. `pnpm i` installs the Bun version the proje
 
 `pnpm dev` works straight away, with no accounts. Its index page (`http://localhost:6545`) has a **Loader Script (local only)** box: click to copy it, paste it into Webflow, and start building against your dev server. It only works on `.webflow.io` on a desktop.
 
-When you're ready to deploy, choose Cloudflare or Vercel in the **Connect a host** form on that page. It fills in what it can from your Cloudflare login. Or use the terminal:
+When you're ready to deploy, choose a host in the **Connect a host** form on that page. At Off+Brand, choose **Off+Brand team**: it pushes the config and creates the project on the team's Cloudflare account, with only an email code ([how it works](./docs/hosting.md#offbrand-team-projects)). Cloudflare and Vercel fill in what they can from your own login. Or use the terminal:
 
 ```bash
 pnpm connect cloudflare   # or: pnpm connect vercel

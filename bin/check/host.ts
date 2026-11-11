@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { listApiRoutes } from "../generate-worker";
 import { type ProjectConfig, readProjectConfig } from "../project-config";
+import { foreignRoutes } from "../wrangler-routes";
 import { apiExportProblems } from "./api-exports";
 import { listFiles } from "./bundle";
 import { buildBlocked, requireBuild } from "./build";
@@ -162,6 +163,15 @@ async function checkCloudflare(
       file: "wrangler.jsonc",
       message: `wrangler.jsonc has no custom_domain route for ${domain}, the deployUrl host in project.config.json`,
       fix: `Add { "pattern": "${domain}", "custom_domain": true } to routes in wrangler.jsonc`,
+    });
+  }
+  const foreign = foreignRoutes(routes, config.deployUrl);
+  if (foreign.length > 0) {
+    add({
+      rule: "host/wrangler",
+      file: "wrangler.jsonc",
+      message: `wrangler.jsonc routes ${foreign.join(", ")} on ${domain}'s domain, which isn't this project's. A deploy would move that domain to this Worker, and Workers Builds refuses to build it`,
+      fix: `Remove ${foreign.length === 1 ? "that route" : "those routes"} from wrangler.jsonc`,
     });
   }
   if (!sameFile(root, w.main, WORKER_FILE)) {

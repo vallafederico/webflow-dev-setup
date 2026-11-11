@@ -44,6 +44,7 @@ function makeRepo(files: Record<string, string>): string {
     "new-module.ts",
     "generate-worker.ts",
     "project-config.ts",
+    "wrangler-routes.ts",
   ]) {
     cpSync(path.join(REPO, "bin", name), path.join(root, "bin", name));
   }

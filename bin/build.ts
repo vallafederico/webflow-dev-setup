@@ -5,6 +5,7 @@ import { copyPublicToDist } from "./copy-public";
 import { getBunDefine } from "./public-asset-origin";
 import { readProjectConfig } from "./project-config";
 import { generateWorker } from "./generate-worker";
+import { foreignRoutesInWrangler } from "./wrangler-routes";
 import { existsSync } from "node:fs";
 import { cp, writeFile } from "node:fs/promises";
 
@@ -27,6 +28,18 @@ async function build() {
   console.log("📦 Building production bundle...");
   try {
     const config = readProjectConfig();
+
+    if (config?.host === "cloudflare") {
+      const foreign = foreignRoutesInWrangler(config.deployUrl);
+      if (foreign.length > 0) {
+        const message = `wrangler.jsonc routes ${foreign.join(", ")}, which ${foreign.length === 1 ? "is" : "are"} on the same domain as ${new URL(config.deployUrl).hostname} but not this project's. Deploying would move that domain to this Worker. Remove ${foreign.length === 1 ? "it" : "them"}, or run pnpm connect cloudflare again.`;
+        if (process.env.WORKERS_CI) {
+          console.error(`❌ ${message}`);
+          process.exit(1);
+        }
+        console.warn(`⚠️  ${message} Workers Builds will refuse to build this.`);
+      }
+    }
 
     // Build JS files
     const result = await Bun.build({

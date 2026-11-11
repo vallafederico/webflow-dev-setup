@@ -27,6 +27,26 @@ With no `project.config.json`, the index page of `pnpm dev` (`http://localhost:6
 - **What it won't do:** change anything on your Cloudflare account, or replace an existing config. Use the terminal for `--media`, for switching hosts and for changing a connected project.
 - **Who can use it:** only the page itself, from this machine. A request from another site or another machine gets a 403, even though the dev server listens on every interface.
 
+## Off+Brand team projects
+
+`team.config.json` names a team whose Cloudflare projects are created for its members, so nobody needs a Cloudflare login or token. For Off+Brand that's the account that owns `itsoffbrand.dev`, and the creator at `https://new.itsoffbrand.dev`. Delete the file and the option goes away.
+
+1. Create the repo in `github.com/itsoffbrand` and push to it, as usual.
+2. On the dev page, choose **Off+Brand team**, check the name and press **Create**. The dev server:
+   - writes `project.config.json` and `wrangler.jsonc` for `https://<name>.itsoffbrand.dev`
+   - commits those two files and pushes `main`
+   - looks up the repo's ID with your GitHub login (`gh`, or the credential git already stores)
+   - opens the creator
+3. The creator asks for a code sent to your `@itsoffbrand.com` email. It checks the name is free and that the repo's pushed config is for this name. Then it creates the Worker, connects the repo and starts the first build.
+4. You're sent back to the dev page, which lists the live URL, the branch preview URL and the build log, with the full loader below. The **Status** row turns to **Live** once the first build is done, which takes about a minute.
+
+After that it's the same as any Cloudflare project: push `main` to deploy, push a branch for a preview.
+
+- **From the terminal:** `pnpm connect cloudflare --team --name <name>` writes the same files. Commit and push them, then press **Create on Off+Brand** on the dev page.
+- **If the creator refuses:** it says why, for example a name that's taken. Fix it and press **Create on Off+Brand** on the dev page again. The same person can retry a failed attempt, and the retry picks up where it stopped.
+- **What it can't do:** change or delete an existing project, or create more than 2 projects per person per hour, or 10 a day for the team.
+- **The domain guard:** on a shared domain, a build deploys whatever routes its `wrangler.jsonc` names, so one project could take another's domain. A Workers Builds build fails when `wrangler.jsonc` routes another host on the project's base domain, and `pnpm check:all` reports it.
+
 ## `pnpm connect`
 
 Writes the project's settings, then prints the dashboard steps for that host. Every prompt has a flag, so it can run unattended. With no TTY, a value that has no flag, env var or existing setting is an error that names the flag to pass.

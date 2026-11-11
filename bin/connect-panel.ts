@@ -1,14 +1,29 @@
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
   connect,
   createRunner,
   type Io,
   parseWhoami,
+  projectLinks,
   type Runner,
   suggestName,
 } from "./connect";
-import { PROJECT_CONFIG_FILE, type ProjectConfig } from "./project-config";
+import {
+  PROJECT_CONFIG_FILE,
+  type ProjectConfig,
+  readProjectConfig,
+} from "./project-config";
+import {
+  createGit,
+  creatorLink,
+  type Git,
+  lookUpRepoId,
+  parseGithubRemote,
+  readTeamConfig,
+  type TeamConfig,
+} from "./team";
 
 const API = "https://api.cloudflare.com/client/v4";
 const RUN_TIMEOUT_MS = 30_000;
@@ -30,7 +45,20 @@ export interface PanelContext {
   onConnected: () => Promise<unknown>;
   run?: Runner;
   fetch?: typeof fetch;
+  git?: Git;
+  gh?: Git;
+  /** One-use states for the creator's redirect back. Shared by default. */
+  states?: Map<string, PendingState>;
+  now?: () => number;
 }
+
+export interface PendingState {
+  name: string;
+  expires: number;
+}
+
+const STATE_TTL_MS = 15 * 60_000;
+const defaultStates = new Map<string, PendingState>();
 
 /**
  * The dev server listens on every interface and websites can send requests to
@@ -213,6 +241,196 @@ async function submit(req: Request, ctx: PanelContext, cwd: string) {
   );
 }
 
+function quietIo(lines: string[]): Io {
+  return {
+    interactive: false,
+    ask: async () => "",
+    log: (message) => lines.push(message),
+    error: (message) => lines.push(message),
+  };
+}
+
+function onTeamDomain(config: ProjectConfig, team: TeamConfig): boolean {
+  return (
+    config.host === "cloudflare" &&
+    new URL(config.deployUrl).hostname ===
+      `${config.name}.${team.cloudflare.domain}`
+  );
+}
+
+/**
+ * Writes the team config, commits and pushes it to main, looks up the repo ID
+ * on this machine, and returns the creator link to open. The creator checks
+ * the repo again, so nothing here has to be trusted.
+ */
+async function teamCreate(req: Request, ctx: PanelContext, cwd: string) {
+  const team = readTeamConfig(cwd);
+  if (!team) return new Response("Not found", { status: 404 });
+  const reply = (status: number, output: string, url?: string) =>
+    Response.json({ ok: status === 200, output, url }, { status });
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return reply(400, "The request wasn't valid JSON.");
+  }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const git = ctx.git ?? createGit(cwd);
+  const gh = ctx.gh ?? createGit(cwd, "gh");
+
+  const remote = parseGithubRemote(
+    (await git(["remote", "get-url", "origin"])).stdout
+  );
+  if (!remote || remote.owner.toLowerCase() !== team.githubOrg.toLowerCase()) {
+    return reply(
+      422,
+      `This folder's origin isn't a repo in github.com/${team.githubOrg}. Create one and push to it first:\n\n  gh repo create ${team.githubOrg}/${name || "<name>"} --private --source . --push`
+    );
+  }
+  const branch = (
+    await git(["rev-parse", "--abbrev-ref", "HEAD"])
+  ).stdout.trim();
+  if (branch !== "main") {
+    return reply(
+      422,
+      `You're on "${branch}". The first build runs from main, so switch to main and try again.`
+    );
+  }
+
+  let existing: ProjectConfig | null = null;
+  try {
+    existing = readProjectConfig(cwd);
+  } catch (error) {
+    return reply(422, String(error instanceof Error ? error.message : error));
+  }
+  if (existing && !onTeamDomain(existing, team)) {
+    return reply(
+      409,
+      `This project is already connected to ${existing.deployUrl}. To move it to ${team.name}, run pnpm connect cloudflare --team --yes in a terminal.`
+    );
+  }
+
+  const lines: string[] = [];
+  const code = await connect(["cloudflare", "--team", `--name=${name}`], {
+    cwd,
+    io: quietIo(lines),
+    run: withTimeout(ctx.run ?? createRunner(cwd)),
+  });
+  if (code !== 0) return reply(422, lines.join("\n"));
+  await ctx.onConnected().catch((error) => {
+    lines.push(`\nThe rebuild failed, so edit a file to retry it: ${error}`);
+  });
+
+  const files = [PROJECT_CONFIG_FILE, "wrangler.jsonc"];
+  await git(["add", "--", ...files]);
+  const staged = await git(["diff", "--cached", "--quiet", "--", ...files]);
+  if (staged.code === 1) {
+    const commit = await git([
+      "commit",
+      "-m",
+      `Connect to ${team.name} hosting as ${name}`,
+      "--",
+      ...files,
+    ]);
+    if (commit.code !== 0)
+      return reply(
+        422,
+        `The config is written, but git couldn't commit it:\n${commit.stderr || commit.stdout}`
+      );
+  }
+  const push = await git(["push", "origin", "HEAD:main"]);
+  if (push.code !== 0)
+    return reply(
+      422,
+      `The config is committed, but git couldn't push it:\n${push.stderr || push.stdout}\nPush main yourself, then press the button again.`
+    );
+
+  const repoId = await lookUpRepoId(remote.owner, remote.repo, {
+    gh,
+    git,
+    fetch: ctx.fetch ?? fetch,
+  });
+  if (!repoId)
+    return reply(
+      422,
+      "Pushed, but couldn't look up the repo's ID with your GitHub login. Run gh auth login, then press the button again."
+    );
+
+  const state = crypto.randomUUID();
+  const states = ctx.states ?? defaultStates;
+  states.set(state, {
+    name,
+    expires: (ctx.now ?? Date.now)() + STATE_TTL_MS,
+  });
+  return reply(
+    200,
+    lines.join("\n"),
+    creatorLink(team, {
+      name,
+      repo: `${remote.owner}/${remote.repo}`,
+      repoId,
+      state,
+      return: new URL(req.url).origin,
+    })
+  );
+}
+
+/**
+ * Where the creator sends the browser back. The state must be one this server
+ * handed out, once, so another site can't fake a "created" page.
+ */
+function created(url: URL, ctx: PanelContext, cwd: string): Response {
+  const states = ctx.states ?? defaultStates;
+  const state = url.searchParams.get("state") ?? "";
+  const pending = states.get(state);
+  states.delete(state);
+  const config = (() => {
+    try {
+      return readProjectConfig(cwd);
+    } catch {
+      return null;
+    }
+  })();
+  if (
+    !pending ||
+    pending.expires < (ctx.now ?? Date.now)() ||
+    pending.name !== url.searchParams.get("name") ||
+    config?.name !== pending.name
+  ) {
+    return new Response(
+      "This link isn't from this dev server, or it was already used. Nothing was changed.",
+      { status: 403 }
+    );
+  }
+  const text = [
+    `Created "${config.name}". The first build is running and takes about a minute.`,
+    "",
+    ...projectLinks(config, wranglerAccount(cwd)).map(
+      (link) => `${link.label.padEnd(16)} ${link.url}`
+    ),
+    "",
+    "Next: paste the loader below into the site's custom code in Webflow, and run pnpm check:live once the build is done.",
+  ].join("\n");
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><script>sessionStorage.setItem("wf-connect-output", ${JSON.stringify(text).replace(/</g, "\\u003c")});location.replace("/");</script>`,
+    { headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
+}
+
+function wranglerAccount(cwd: string): string | undefined {
+  try {
+    const wrangler = Bun.JSONC.parse(
+      readFileSync(resolve(cwd, "wrangler.jsonc"), "utf8")
+    ) as { account_id?: unknown };
+    return typeof wrangler.account_id === "string"
+      ? wrangler.account_id
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Answers `/_connect` and `/_connect/cloudflare` for the dev index page. */
 export async function handleConnect(
   req: Request,
@@ -227,6 +445,12 @@ export async function handleConnect(
   const url = new URL(req.url);
   if (url.pathname === "/_connect" && req.method === "POST") {
     return submit(req, ctx, cwd);
+  }
+  if (url.pathname === "/_connect/team" && req.method === "POST") {
+    return teamCreate(req, ctx, cwd);
+  }
+  if (url.pathname === "/_connect/created" && req.method === "GET") {
+    return created(url, ctx, cwd);
   }
   if (url.pathname === "/_connect/cloudflare" && req.method === "GET") {
     return Response.json(
@@ -282,21 +506,42 @@ export const PANEL_CSS = `
           .panel dd { margin: 0; }
 `;
 
-/** What the project is connected to, and the steps from connecting if they just happened. */
-export function connectedPanelHtml(config: ProjectConfig): string {
+/** What the project is connected to, its links, whether it's live, and the steps from connecting if they just happened. */
+export function connectedPanelHtml(
+  config: ProjectConfig,
+  cwd = process.cwd()
+): string {
   const row = (label: string, value: string) =>
     `<dt>${label}</dt><dd>${value}</dd>`;
   const link = (url: string) =>
-    `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a>`;
-  return `<section class="panel">
+    url.includes("<")
+      ? `<code>${escapeHtml(url)}</code>`
+      : `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a>`;
+  const team = readTeamConfig(cwd);
+  const teamManaged = team !== null && onTeamDomain(config, team);
+  const links = projectLinks(
+    config,
+    config.host === "cloudflare" ? wranglerAccount(cwd) : undefined
+  );
+  return `<section class="panel" id="project">
           <h2>Project</h2>
           <dl>
-            ${row("Host", escapeHtml(config.host))}
+            ${row("Host", escapeHtml(teamManaged && team ? `${config.host} (${team.name})` : config.host))}
             ${row("Name", escapeHtml(config.name))}
             ${row("Deploy URL", link(config.deployUrl))}
             ${config.mediaUrl ? row("Media URL", link(config.mediaUrl)) : ""}
-            ${row("Preview hosts", `<code>*${escapeHtml(config.previewHostSuffix)}</code>`)}
+            ${row("Status", `<span data-live>Checking ${escapeHtml(config.deployUrl)}...</span>`)}
+            ${links.map((l) => row(escapeHtml(l.label), link(l.url))).join("\n            ")}
           </dl>
+          ${
+            teamManaged && team
+              ? `<div data-create hidden>
+            <p class="hint">Not live yet. If the Worker hasn't been created, this commits and pushes the config to main, then opens ${escapeHtml(team.creatorUrl)} to create it. You sign in there with your work email.</p>
+            <button type="button">Create on ${escapeHtml(team.name)}</button>
+            <pre class="error" data-error hidden></pre>
+          </div>`
+              : ""
+          }
           <div id="next-steps" hidden>
             <h3>Next steps</h3>
             <pre></pre>
@@ -306,28 +551,98 @@ export function connectedPanelHtml(config: ProjectConfig): string {
             (function () {
               var box = document.getElementById("next-steps");
               var text = sessionStorage.getItem("wf-connect-output");
-              if (!text) return;
-              box.querySelector("pre").textContent = text;
-              box.hidden = false;
-              box.querySelector("button").addEventListener("click", function () {
-                sessionStorage.removeItem("wf-connect-output");
-                box.hidden = true;
+              if (text) {
+                box.querySelector("pre").textContent = text;
+                box.hidden = false;
+                box.querySelector("button").addEventListener("click", function () {
+                  sessionStorage.removeItem("wf-connect-output");
+                  box.hidden = true;
+                });
+              }
+
+              var live = document.querySelector("#project [data-live]");
+              var create = document.querySelector("#project [data-create]");
+              fetch(${JSON.stringify(`${config.deployUrl}/build-manifest.json`)}, { cache: "no-store" })
+                .then(function (response) {
+                  if (!response.ok) throw new Error(String(response.status));
+                  return response.json();
+                })
+                .then(function (manifest) {
+                  live.textContent = "Live" + (manifest.commit ? ", commit " + String(manifest.commit).slice(0, 7) : "") + (manifest.timestamp ? ", built " + new Date(manifest.timestamp).toLocaleString() : "");
+                })
+                .catch(function () {
+                  live.textContent = "Not live yet. A new project's first build takes about a minute.";
+                  if (create) create.hidden = false;
+                });
+
+              if (!create) return;
+              var button = create.querySelector("button");
+              var errorBox = create.querySelector("[data-error]");
+              button.addEventListener("click", function () {
+                button.disabled = true;
+                errorBox.hidden = true;
+                fetch("/_connect/team", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: ${JSON.stringify(config.name)} }),
+                })
+                  .then(function (response) { return response.json(); })
+                  .then(function (result) {
+                    if (result.ok && result.url) { location.href = result.url; return; }
+                    errorBox.textContent = result.output;
+                    errorBox.hidden = false;
+                    button.disabled = false;
+                  })
+                  .catch(function (error) {
+                    errorBox.textContent = String(error);
+                    errorBox.hidden = false;
+                    button.disabled = false;
+                  });
               });
             })();
           </script>
         </section>`;
 }
 
+function originRepo(cwd: string): { owner: string; repo: string } | null {
+  try {
+    const result = spawnSync("git", ["remote", "get-url", "origin"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    return result.status === 0 ? parseGithubRemote(result.stdout) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The form shown when the project has no config. */
 export function connectFormHtml(cwd = process.cwd()): string {
   const name = suggestName(basename(cwd)) ?? "";
   const domain = process.env.WF_BASE_DOMAIN ?? "";
+  const team = readTeamConfig(cwd);
+  const remote = team ? originRepo(cwd) : null;
+  const inOrg =
+    team !== null &&
+    remote !== null &&
+    remote.owner.toLowerCase() === team.githubOrg.toLowerCase();
+  const teamBlock = team
+    ? `<div data-host="team"${inOrg ? "" : " data-blocked"}>
+              ${
+                inOrg && remote
+                  ? `<p class="hint">Repo: <code>${escapeHtml(`${remote.owner}/${remote.repo}`)}</code>. Pressing Create commits and pushes <code>project.config.json</code> and <code>wrangler.jsonc</code> to <code>main</code>, then opens ${escapeHtml(team.creatorUrl)}, where you sign in with your work email. It makes the Worker and starts the first build. No Cloudflare login is needed here.</p>`
+                  : `<p class="error">This folder's <code>origin</code> isn't a repo in github.com/${escapeHtml(team.githubOrg)}. Create one and push to it, then reload:</p><pre>gh repo create ${escapeHtml(team.githubOrg)}/${escapeHtml(name || "<name>")} --private --source . --push</pre>`
+              }
+            </div>`
+    : "";
   return `<section class="panel" id="connect">
           <h2>Connect a host</h2>
-          <p class="hint">This project has no host yet. Pick one to get its deploy link and full loader. This only writes the config files, so nothing changes on your account. For R2 media, run <code>pnpm connect cloudflare --media</code> in a terminal.</p>
+          <p class="hint">This project has no host yet. Pick one to get its deploy link and full loader.${team ? ` <strong>${escapeHtml(team.name)} team</strong> creates the project on the team's Cloudflare account for you.` : ""} Cloudflare and Vercel only write the config files, so nothing changes on your account. For R2 media, run <code>pnpm connect cloudflare --media</code> in a terminal.</p>
           <form>
             <div class="hosts">
-              <label><input type="radio" name="host" value="cloudflare" checked> Cloudflare</label>
+              ${team ? `<label><input type="radio" name="host" value="team" checked> ${escapeHtml(team.name)} team</label>` : ""}
+              <label><input type="radio" name="host" value="cloudflare"${team ? "" : " checked"}> Cloudflare</label>
               <label><input type="radio" name="host" value="vercel"> Vercel</label>
             </div>
             <label><span>Project name</span><input type="text" name="name" value="${escapeHtml(name)}" required></label>
@@ -339,6 +654,7 @@ export function connectFormHtml(cwd = process.cwd()): string {
               <datalist id="connect-domains"></datalist>
               <label><span>workers.dev subdomain</span><input type="text" name="subdomain" placeholder="my-team" required></label>
             </div>
+            ${teamBlock}
             <div data-host="vercel" hidden>
               <label><span>Team preview suffix (Vercel project settings, Domains)</span><input type="text" name="suffix" placeholder="-your-team.vercel.app" required></label>
             </div>
@@ -361,7 +677,9 @@ export function connectFormHtml(cwd = process.cwd()): string {
                 var host = form.elements.host.value;
                 form.querySelector("[data-link]").textContent = host === "vercel"
                   ? "https://" + name + ".vercel.app"
-                  : "https://" + name + "." + (form.elements.domain.value.trim() || "<domain>");
+                  : host === "team"
+                    ? "https://" + name + "." + ${JSON.stringify(team?.cloudflare.domain ?? "")}
+                    : "https://" + name + "." + (form.elements.domain.value.trim() || "<domain>");
               }
 
               // Disabled fields aren't required or sent, so only one host's count.
@@ -374,6 +692,10 @@ export function connectFormHtml(cwd = process.cwd()): string {
                     field.disabled = !active;
                   });
                 });
+                var blocked = form.querySelector('[data-host="' + host + '"][data-blocked]');
+                var submit = form.querySelector("button[type=submit]");
+                submit.disabled = Boolean(blocked);
+                submit.textContent = host === "team" ? "Create" : "Connect";
                 updateLink();
               }
 
@@ -426,13 +748,18 @@ export function connectFormHtml(cwd = process.cwd()): string {
                 var button = form.querySelector("button[type=submit]");
                 button.disabled = true;
                 errorBox.hidden = true;
-                fetch("/_connect", {
+                var team = form.elements.host.value === "team";
+                fetch(team ? "/_connect/team" : "/_connect", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(Object.fromEntries(new FormData(form))),
+                  body: JSON.stringify(team ? { name: form.elements.name.value } : Object.fromEntries(new FormData(form))),
                 })
                   .then(function (response) { return response.json(); })
                   .then(function (result) {
+                    if (result.ok && result.url) {
+                      location.href = result.url;
+                      return;
+                    }
                     if (result.ok) {
                       sessionStorage.setItem("wf-connect-output", result.output);
                       location.reload();

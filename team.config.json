@@ -1,0 +1,10 @@
+{
+  "name": "Off+Brand",
+  "creatorUrl": "https://new.itsoffbrand.dev",
+  "githubOrg": "itsoffbrand",
+  "cloudflare": {
+    "accountId": "5397e49e27a3bdf3feb44682527cc6e6",
+    "domain": "itsoffbrand.dev",
+    "subdomain": "ob-ops"
+  }
+}
